@@ -11,14 +11,14 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-// ← REPLACE THESE VALUES with your Firebase project config
 const FIREBASE_CONFIG = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyBt_ezYNeOFmUQ2CH6JHvIrlDlDfkyzZuw",
+  authDomain:        "ziga-board-games.firebaseapp.com",
+  projectId:         "ziga-board-games",
+  storageBucket:     "ziga-board-games.firebasestorage.app",
+  messagingSenderId: "765668497317",
+  appId:             "1:765668497317:web:8c2d0135d0ae60c2207a4c",
+  measurementId:     "G-5KYRNNJZ6R"
 };
 
 /* ── Firebase SDK loader ──────────────────────────────────── */
