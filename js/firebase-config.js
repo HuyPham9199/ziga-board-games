@@ -196,6 +196,109 @@ class FirebaseService {
         });
       });
   }
+
+  /* ── Presence ─────────────────────────────────────────────
+   * status: 'online' | 'looking' | 'in-game'
+   * game: 'go' | null
+   * boardSize: 9 | 13 | 19 | null
+   ─────────────────────────────────────────────────────────── */
+  async setPresence(userId, data) {
+    if (!this._ready) return;
+    await this.db.collection('presence').doc(userId).set({
+      ...data,
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Auto-remove on tab close
+    if (!this._presenceCleanup) {
+      this._presenceCleanup = () => {
+        // Best-effort: use beacon API
+        const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/presence/${userId}`;
+        navigator.sendBeacon && navigator.sendBeacon(url);
+        this.removePresence(userId);
+      };
+      window.addEventListener('beforeunload', this._presenceCleanup);
+    }
+
+    // Heartbeat every 25s
+    if (!this._heartbeat) {
+      this._heartbeat = setInterval(() => {
+        if (!this._ready) return;
+        this.db.collection('presence').doc(userId).update({
+          lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(() => {});
+      }, 25000);
+    }
+  }
+
+  async removePresence(userId) {
+    if (!this._ready) return;
+    clearInterval(this._heartbeat);
+    this._heartbeat = null;
+    await this.db.collection('presence').doc(userId).delete().catch(() => {});
+  }
+
+  listenPresence(callback) {
+    if (!this._ready) return () => {};
+    // Only show users seen within last 60 seconds
+    const cutoff = new Date(Date.now() - 60000);
+    return this.db.collection('presence')
+      .where('lastSeen', '>', firebase.firestore.Timestamp.fromDate(cutoff))
+      .onSnapshot(snap => {
+        const players = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        callback(players);
+      });
+  }
+
+  /* ── Invites ──────────────────────────────────────────────
+   * Sends invite from `from` user to `toUserId`
+   ─────────────────────────────────────────────────────────── */
+  async sendInvite(from, toUserId, gameConfig) {
+    if (!this._ready) throw new Error('Firebase not ready');
+    const ref = this.db.collection('invites').doc();
+    await ref.set({
+      id: ref.id,
+      from,               // { userId, displayName, elo, avatar }
+      toUserId,
+      game: gameConfig.game,       // 'go'
+      boardSize: gameConfig.boardSize,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return ref.id;
+  }
+
+  async respondInvite(inviteId, status) {
+    if (!this._ready) return;
+    await this.db.collection('invites').doc(inviteId).update({ status });
+  }
+
+  listenIncomingInvites(userId, callback) {
+    if (!this._ready) return () => {};
+    return this.db.collection('invites')
+      .where('toUserId', '==', userId)
+      .where('status',   '==', 'pending')
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            callback({ id: change.doc.id, ...change.doc.data() });
+          }
+        });
+      });
+  }
+
+  listenInviteResponse(inviteId, callback) {
+    if (!this._ready) return () => {};
+    return this.db.collection('invites').doc(inviteId)
+      .onSnapshot(doc => {
+        if (doc.exists) callback(doc.data());
+      });
+  }
+
+  async deleteInvite(inviteId) {
+    if (!this._ready) return;
+    await this.db.collection('invites').doc(inviteId).delete().catch(() => {});
+  }
 }
 
 window.firebaseService = new FirebaseService();

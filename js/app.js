@@ -54,13 +54,24 @@ const State = {
   bot:         null,
   botColor:    WHITE,
   myColor:     BLACK,
-  gameId:      null,        // Firestore ID for online games
-  gameUnsub:   null,        // Firestore listener unsub
+  gameId:      null,
+  gameUnsub:   null,
   chatUnsub:   null,
 
   // Timer
   timers:      { [BLACK]: 600, [WHITE]: 600 },
   timerInterval: null,
+
+  // Presence & Invite
+  presenceUnsub:  null,
+  inviteUnsub:    null,
+  onlinePlayers:  [],          // raw list from Firestore
+  onlineFilter:   'all',       // 'all' | 'looking' | 'in-game'
+  onlineSearch:   '',
+  pendingInviteId: null,       // invite I sent (waiting response)
+  inviteRespUnsub: null,
+  incomingInvite:  null,       // invite currently shown in modal
+  inviteCountdown: null,       // timer interval for countdown
 };
 
 /* ════════════════════════════════════════════════
@@ -124,13 +135,15 @@ async function handleAuthReady(user) {
   if (user) {
     State.user    = user;
     State.isGuest = false;
-    // Load stats
     const stats = await firebaseService.getUserStats(user.uid);
     if (stats) State.stats = stats;
     updateNavUser();
     showView('view-lobby');
+    initLobby();
+    startPresence('online');
+    startListeningPresence();
+    startListeningInvites();
   } else if (State.isGuest) {
-    // Stay on login
     showView('view-login');
   }
 }
@@ -154,12 +167,294 @@ function updateStats() {
    LOBBY
 ═══════════════════════════════════════════════ */
 function initLobby() {
-  // Simulate online count
+  // Simulate online count badge on game card
   setInterval(() => {
     const count = Math.floor(Math.random() * 40) + 12;
     $('lobby-online-count').textContent = count;
   }, 5000);
   $('lobby-online-count').textContent = Math.floor(Math.random() * 40) + 12;
+}
+
+/* ════════════════════════════════════════════════
+   PRESENCE
+═══════════════════════════════════════════════ */
+async function startPresence(status, gameInfo = {}) {
+  if (!firebaseService._ready || !State.user) return;
+  const name = State.user.displayName || State.user.email || 'Ẩn danh';
+  await firebaseService.setPresence(State.user.uid, {
+    displayName: name,
+    avatar: name[0].toUpperCase(),
+    elo:    State.stats.elo,
+    status,                    // 'online' | 'looking' | 'in-game'
+    game:      gameInfo.game      || null,
+    boardSize: gameInfo.boardSize || null,
+  });
+}
+
+function startListeningPresence() {
+  if (!firebaseService._ready) return;
+  if (State.presenceUnsub) State.presenceUnsub();
+  State.presenceUnsub = firebaseService.listenPresence(players => {
+    State.onlinePlayers = players;
+    renderOnlinePanel();
+  });
+}
+
+function stopPresence() {
+  if (firebaseService._ready && State.user) {
+    firebaseService.removePresence(State.user.uid);
+  }
+  if (State.presenceUnsub) { State.presenceUnsub(); State.presenceUnsub = null; }
+}
+
+/* ════════════════════════════════════════════════
+   ONLINE PANEL RENDER
+═══════════════════════════════════════════════ */
+function renderOnlinePanel() {
+  const list    = $('online-list');
+  const empty   = $('online-empty');
+  const myId    = State.user?.uid;
+  const search  = State.onlineSearch.toLowerCase();
+  const filter  = State.onlineFilter;
+
+  let players = State.onlinePlayers.filter(p => {
+    if (search && !p.displayName?.toLowerCase().includes(search)) return false;
+    if (filter === 'looking'  && p.status !== 'looking')  return false;
+    if (filter === 'in-game'  && p.status !== 'in-game')  return false;
+    return true;
+  });
+
+  // Count update
+  $('online-total').textContent = State.onlinePlayers.length;
+  $('lobby-online-count').textContent = State.onlinePlayers.length;
+
+  if (!players.length) {
+    list.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Sort: self first, then looking, then online, then in-game
+  const order = { looking: 0, online: 1, 'in-game': 2 };
+  players.sort((a, b) => {
+    if (a.id === myId) return -1;
+    if (b.id === myId) return 1;
+    return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+  });
+
+  list.innerHTML = '';
+  players.forEach(p => list.appendChild(buildPlayerRow(p, myId)));
+}
+
+function buildPlayerRow(p, myId) {
+  const isMe     = p.id === myId;
+  const canInvite = !isMe && (p.status === 'online' || p.status === 'looking');
+  const inGame    = p.status === 'in-game';
+
+  const statusLabel = { online: 'Online', looking: 'Tìm trận', 'in-game': 'Đang chơi' };
+  const gameLabel   = p.game === 'go' ? `Cờ Vây ${p.boardSize || 19}×${p.boardSize || 19}` : '';
+
+  const row = document.createElement('div');
+  row.className = `player-row${isMe ? ' is-me' : ''}`;
+  row.dataset.uid = p.id;
+
+  row.innerHTML = `
+    <div class="pr-avatar">
+      ${p.avatar || '?'}
+      <span class="pr-status-dot ${p.status}"></span>
+    </div>
+    <div class="pr-info">
+      <div class="pr-name">${escHtml(p.displayName || 'Ẩn danh')}${isMe ? ' <small style="color:var(--accent);font-size:10px">(bạn)</small>' : ''}</div>
+      <div class="pr-meta">
+        <span class="pr-elo">ELO ${p.elo || 1200}</span>
+        <span class="pr-status-badge ${p.status}">${statusLabel[p.status] || 'Online'}</span>
+        ${gameLabel ? `<span class="pr-game-info">${gameLabel}</span>` : ''}
+      </div>
+    </div>
+    <div class="pr-actions">
+      ${canInvite
+        ? `<button class="btn-invite" data-uid="${p.id}" data-name="${escHtml(p.displayName)}" data-elo="${p.elo||1200}">Mời</button>`
+        : inGame
+          ? `<button class="btn-spectate" disabled title="Tính năng xem ván sắp ra mắt">Xem</button>`
+          : ''
+      }
+    </div>`;
+
+  // Invite button click
+  const invBtn = row.querySelector('.btn-invite');
+  if (invBtn) invBtn.addEventListener('click', () => sendInviteTo(p));
+
+  return row;
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ════════════════════════════════════════════════
+   SEND INVITE
+═══════════════════════════════════════════════ */
+async function sendInviteTo(target) {
+  if (!firebaseService._ready || !State.user) {
+    toast('Cần đăng nhập Firebase để mời', 'error'); return;
+  }
+  if (State.pendingInviteId) {
+    toast('Bạn đang có lời mời đang chờ', 'error'); return;
+  }
+
+  const from = {
+    userId:      State.user.uid,
+    displayName: State.user.displayName || 'Ẩn danh',
+    elo:         State.stats.elo,
+    avatar:      (State.user.displayName || 'A')[0].toUpperCase(),
+  };
+
+  try {
+    const inviteId = await firebaseService.sendInvite(from, target.id, {
+      game: 'go', boardSize: State.boardSize
+    });
+    State.pendingInviteId = inviteId;
+    showInviteSentModal(target.displayName);
+    listenInviteResponse(inviteId);
+  } catch (e) {
+    toast('Không gửi được lời mời: ' + e.message, 'error');
+  }
+}
+
+function showInviteSentModal(toName) {
+  $('invite-sent-to').textContent = `Đã mời ${toName} vào ván Cờ Vây ${State.boardSize}×${State.boardSize}`;
+  $('modal-invite-sent').classList.remove('hidden');
+}
+
+function hideInviteSentModal() {
+  $('modal-invite-sent').classList.add('hidden');
+}
+
+function listenInviteResponse(inviteId) {
+  if (State.inviteRespUnsub) State.inviteRespUnsub();
+  State.inviteRespUnsub = firebaseService.listenInviteResponse(inviteId, async data => {
+    if (!data || data.status === 'pending') return;
+    State.inviteRespUnsub?.();
+    State.inviteRespUnsub  = null;
+    State.pendingInviteId  = null;
+    hideInviteSentModal();
+
+    if (data.status === 'accepted') {
+      toast('Đối thủ đồng ý! Đang bắt đầu ván đấu...', 'success');
+      // Create game: I am black (inviter), they are white
+      const gameId = await firebaseService.createGame(
+        State.user.uid, data.toUserId || data.from?.userId, State.boardSize
+      );
+      // Actually invitee is "to", so create game: inviter=black, invitee=white
+      await firebaseService.deleteInvite(inviteId);
+      startOnlineGameWithId(gameId, BLACK);
+    } else {
+      toast('Đối thủ từ chối lời mời', 'info');
+      firebaseService.deleteInvite(inviteId);
+    }
+  });
+}
+
+/* ════════════════════════════════════════════════
+   LISTEN INCOMING INVITES
+═══════════════════════════════════════════════ */
+function startListeningInvites() {
+  if (!firebaseService._ready || !State.user) return;
+  if (State.inviteUnsub) State.inviteUnsub();
+  State.inviteUnsub = firebaseService.listenIncomingInvites(State.user.uid, invite => {
+    showIncomingInvite(invite);
+  });
+}
+
+function showIncomingInvite(invite) {
+  // Don't stack invites
+  if (State.incomingInvite) return;
+  State.incomingInvite = invite;
+
+  $('invite-from-avatar').textContent = invite.from.avatar || '?';
+  $('invite-from-name').textContent   = invite.from.displayName || 'Ai đó';
+  $('invite-from-elo').textContent    = `ELO ${invite.from.elo || 1200}`;
+  $('invite-game-label').textContent  = `Cờ Vây ${invite.boardSize || 19}×${invite.boardSize || 19}`;
+  $('modal-invite').classList.remove('hidden');
+
+  // Countdown 30s
+  let sec = 30;
+  $('invite-countdown').textContent = sec;
+  const fill = $('invite-progress');
+  fill.style.transform = 'scaleX(1)';
+
+  if (State.inviteCountdown) clearInterval(State.inviteCountdown);
+  State.inviteCountdown = setInterval(() => {
+    sec--;
+    $('invite-countdown').textContent = sec;
+    fill.style.transform = `scaleX(${sec / 30})`;
+    if (sec <= 0) {
+      clearInterval(State.inviteCountdown);
+      declineInvite();
+    }
+  }, 1000);
+}
+
+async function acceptInvite() {
+  const invite = State.incomingInvite;
+  if (!invite) return;
+  clearInterval(State.inviteCountdown);
+  $('modal-invite').classList.add('hidden');
+  State.incomingInvite = null;
+
+  await firebaseService.respondInvite(invite.id, 'accepted');
+  toast('Đã đồng ý! Đang bắt đầu ván đấu...', 'success');
+
+  // Create game: inviter=black, me=white
+  const gameId = await firebaseService.createGame(
+    invite.from.userId, State.user.uid, invite.boardSize || 19
+  );
+  await firebaseService.deleteInvite(invite.id);
+  startOnlineGameWithId(gameId, WHITE);
+}
+
+async function declineInvite() {
+  const invite = State.incomingInvite;
+  if (!invite) return;
+  clearInterval(State.inviteCountdown);
+  $('modal-invite').classList.add('hidden');
+  State.incomingInvite = null;
+
+  await firebaseService.respondInvite(invite.id, 'declined');
+  await firebaseService.deleteInvite(invite.id);
+}
+
+/* ════════════════════════════════════════════════
+   START ONLINE GAME WITH KNOWN ID
+═══════════════════════════════════════════════ */
+function startOnlineGameWithId(gameId, myColor) {
+  State.gameMode   = 'online';
+  State.boardSize  = State.boardSize;
+  State.playerColor = myColor;
+  State.gameId     = gameId;
+
+  State.engine  = new GoEngine(State.boardSize, 6.5);
+  State.myColor = myColor;
+  State.botColor = myColor === BLACK ? WHITE : BLACK;
+
+  setupGameUI();
+  State.board = new GoBoard('go-board', State.engine, {
+    onPlace: (x, y) => onPlayerMove(x, y)
+  });
+  State.board.setMyColor(myColor);
+  State.board.setDisabled(myColor !== BLACK); // black goes first
+
+  const t = State.timeControl > 0 ? State.timeControl : 0;
+  State.timers = { [BLACK]: t, [WHITE]: t };
+  updateTimerDisplay();
+
+  $('info-mode').textContent = 'Online (Lời mời)';
+  showView('view-game');
+  State.board.resize();
+  startPresence('in-game', { game: 'go', boardSize: State.boardSize });
+  startOnlineListener();
+  startTimer();
 }
 
 /* ════════════════════════════════════════════════
@@ -240,6 +535,7 @@ async function startGame() {
 
   showView('view-game');
   State.board.resize();
+  startPresence('in-game', { game: 'go', boardSize: State.boardSize });
 
   if (mode === 'online') {
     await startOnlineGame();
@@ -762,24 +1058,33 @@ function bindEvents() {
 
   // Logout
   $('btn-logout').addEventListener('click', async () => {
+    stopPresence();
+    if (State.inviteUnsub)    { State.inviteUnsub();    State.inviteUnsub    = null; }
+    if (State.presenceUnsub)  { State.presenceUnsub();  State.presenceUnsub  = null; }
     await firebaseService.signOut();
     State.user    = null;
     State.isGuest = false;
     State.stats   = { wins: 0, losses: 0, games: 0, elo: 1200 };
+    State.onlinePlayers = [];
     showView('view-login');
   });
 
   // Lobby → Setup
   $('card-go').addEventListener('click', () => {
+    startPresence('looking', { game: 'go', boardSize: State.boardSize });
     showView('view-setup');
   });
   document.querySelector('#card-go .btn-play').addEventListener('click', e => {
     e.stopPropagation();
+    startPresence('looking', { game: 'go', boardSize: State.boardSize });
     showView('view-setup');
   });
 
   // Back buttons
-  $('btn-setup-back').addEventListener('click', () => showView('view-lobby'));
+  $('btn-setup-back').addEventListener('click', () => {
+    startPresence('online'); // back to lobby = online idle
+    showView('view-lobby');
+  });
   $('btn-game-back').addEventListener('click', () => {
     stopTimer();
     if (State.gameUnsub) { State.gameUnsub(); State.gameUnsub = null; }
@@ -787,6 +1092,44 @@ function bindEvents() {
     if (State.gameMode === 'online' && State.user) {
       firebaseService.leaveQueue(State.user.uid);
     }
+    startPresence('online'); // back to lobby
+    showView('view-lobby');
+  });
+
+  // Online filter tabs
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      State.onlineFilter = btn.dataset.filter;
+      renderOnlinePanel();
+    });
+  });
+
+  // Online search
+  $('online-search-input').addEventListener('input', e => {
+    State.onlineSearch = e.target.value;
+    renderOnlinePanel();
+  });
+
+  // Invite modal buttons
+  $('btn-invite-accept').addEventListener('click', acceptInvite);
+  $('btn-invite-decline').addEventListener('click', declineInvite);
+
+  // Cancel sent invite
+  $('btn-cancel-invite').addEventListener('click', async () => {
+    if (State.pendingInviteId) {
+      await firebaseService.deleteInvite(State.pendingInviteId);
+      if (State.inviteRespUnsub) { State.inviteRespUnsub(); State.inviteRespUnsub = null; }
+      State.pendingInviteId = null;
+    }
+    hideInviteSentModal();
+  });
+
+  // Result → lobby: restore presence
+  $('btn-to-lobby').addEventListener('click', () => {
+    stopTimer();
+    startPresence('online');
     showView('view-lobby');
   });
 
@@ -802,10 +1145,6 @@ function bindEvents() {
   $('btn-rematch').addEventListener('click', () => {
     $('scoring-overlay').classList.add('hidden');
     startGame();
-  });
-  $('btn-to-lobby').addEventListener('click', () => {
-    stopTimer();
-    showView('view-lobby');
   });
 
   // Chat

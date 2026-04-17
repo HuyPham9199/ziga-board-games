@@ -60,71 +60,102 @@
     </div>
   </nav>
 
-  <div class="lobby-container">
-    <!-- Hero -->
-    <section class="lobby-hero">
-      <h1>Chọn trò chơi</h1>
-      <p>Thách thức AI hoặc đấu trực tuyến với người chơi khắp nơi</p>
-    </section>
+  <div class="lobby-wrapper">
+    <!-- LEFT: main content -->
+    <div class="lobby-container">
+      <!-- Hero -->
+      <section class="lobby-hero">
+        <h1>Chọn trò chơi</h1>
+        <p>Thách thức AI hoặc đấu trực tuyến với người chơi khắp nơi</p>
+      </section>
 
-    <!-- Game Cards -->
-    <section class="game-grid">
-      <div class="game-card go-card active-card" id="card-go">
-        <div class="card-glow"></div>
-        <div class="card-icon">⬛⬜</div>
-        <h3>Cờ Vây</h3>
-        <p>Go · Weiqi · Baduk</p>
-        <div class="card-stats">
-          <span id="lobby-online-count">0</span> người online
+      <!-- Game Cards -->
+      <section class="game-grid">
+        <div class="game-card go-card active-card" id="card-go">
+          <div class="card-glow"></div>
+          <div class="card-icon">⬛⬜</div>
+          <h3>Cờ Vây</h3>
+          <p>Go · Weiqi · Baduk</p>
+          <div class="card-stats">
+            <span id="lobby-online-count">0</span> người online
+          </div>
+          <button class="btn-play">Chơi ngay</button>
         </div>
-        <button class="btn-play">Chơi ngay</button>
-      </div>
-      <div class="game-card locked-card">
-        <div class="lock-overlay">🔒</div>
-        <div class="card-icon">♔</div>
-        <h3>Cờ Vua</h3>
-        <p>Chess · Schach</p>
-        <div class="coming-soon">Sắp ra mắt</div>
-      </div>
-      <div class="game-card locked-card">
-        <div class="lock-overlay">🔒</div>
-        <div class="card-icon">將</div>
-        <h3>Cờ Tướng</h3>
-        <p>Chinese Chess</p>
-        <div class="coming-soon">Sắp ra mắt</div>
-      </div>
-      <div class="game-card locked-card">
-        <div class="lock-overlay">🔒</div>
-        <div class="card-icon">🐴</div>
-        <h3>Cờ Cá Ngựa</h3>
-        <p>Ludo</p>
-        <div class="coming-soon">Sắp ra mắt</div>
-      </div>
-    </section>
+        <div class="game-card locked-card">
+          <div class="lock-overlay">🔒</div>
+          <div class="card-icon">♔</div>
+          <h3>Cờ Vua</h3>
+          <p>Chess · Schach</p>
+          <div class="coming-soon">Sắp ra mắt</div>
+        </div>
+        <div class="game-card locked-card">
+          <div class="lock-overlay">🔒</div>
+          <div class="card-icon">將</div>
+          <h3>Cờ Tướng</h3>
+          <p>Chinese Chess</p>
+          <div class="coming-soon">Sắp ra mắt</div>
+        </div>
+        <div class="game-card locked-card">
+          <div class="lock-overlay">🔒</div>
+          <div class="card-icon">🐴</div>
+          <h3>Cờ Cá Ngựa</h3>
+          <p>Ludo</p>
+          <div class="coming-soon">Sắp ra mắt</div>
+        </div>
+      </section>
 
-    <!-- Quick Stats -->
-    <section class="stats-row" id="player-stats">
-      <div class="stat-card glass">
-        <div class="stat-icon">🏆</div>
-        <div class="stat-val" id="stat-wins">0</div>
-        <div class="stat-label">Thắng</div>
+      <!-- Quick Stats -->
+      <section class="stats-row" id="player-stats">
+        <div class="stat-card glass">
+          <div class="stat-icon">🏆</div>
+          <div class="stat-val" id="stat-wins">0</div>
+          <div class="stat-label">Thắng</div>
+        </div>
+        <div class="stat-card glass">
+          <div class="stat-icon">💀</div>
+          <div class="stat-val" id="stat-losses">0</div>
+          <div class="stat-label">Thua</div>
+        </div>
+        <div class="stat-card glass">
+          <div class="stat-icon">🎮</div>
+          <div class="stat-val" id="stat-games">0</div>
+          <div class="stat-label">Ván đã chơi</div>
+        </div>
+        <div class="stat-card glass">
+          <div class="stat-icon">⭐</div>
+          <div class="stat-val" id="stat-elo">1200</div>
+          <div class="stat-label">ELO</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT: online players panel -->
+    <aside class="online-panel glass" id="online-panel">
+      <div class="online-panel-header">
+        <div class="online-panel-title">
+          <span class="dot-pulse"></span>
+          Người chơi online
+          <span class="online-badge" id="online-total">0</span>
+        </div>
+        <div class="online-filter-tabs">
+          <button class="filter-tab active" data-filter="all">Tất cả</button>
+          <button class="filter-tab" data-filter="looking">Tìm trận</button>
+          <button class="filter-tab" data-filter="in-game">Đang chơi</button>
+        </div>
       </div>
-      <div class="stat-card glass">
-        <div class="stat-icon">💀</div>
-        <div class="stat-val" id="stat-losses">0</div>
-        <div class="stat-label">Thua</div>
+
+      <div class="online-search">
+        <input type="text" id="online-search-input" placeholder="Tìm người chơi..." />
       </div>
-      <div class="stat-card glass">
-        <div class="stat-icon">🎮</div>
-        <div class="stat-val" id="stat-games">0</div>
-        <div class="stat-label">Ván đã chơi</div>
+
+      <div class="online-list" id="online-list">
+        <div class="online-empty" id="online-empty">
+          <div class="online-empty-icon">🌐</div>
+          <p>Chưa có ai online</p>
+          <small>Đăng nhập để thấy người chơi khác</small>
+        </div>
       </div>
-      <div class="stat-card glass">
-        <div class="stat-icon">⭐</div>
-        <div class="stat-val" id="stat-elo">1200</div>
-        <div class="stat-label">ELO</div>
-      </div>
-    </section>
+    </aside>
   </div>
 </div>
 
@@ -356,6 +387,38 @@
       </div>
     </div>
     <button id="btn-cancel-mm" class="btn-guest">Hủy</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ INVITE MODAL (incoming) ═══════════════════════ -->
+<div id="modal-invite" class="modal hidden">
+  <div class="modal-content glass invite-modal">
+    <div class="invite-avatar" id="invite-from-avatar">?</div>
+    <h3 id="invite-from-name">Ai đó</h3>
+    <p class="invite-elo" id="invite-from-elo">ELO 1200</p>
+    <div class="invite-details">
+      <span id="invite-game-icon">⬛⬜</span>
+      <span id="invite-game-label">Cờ Vây 19×19</span>
+    </div>
+    <p class="invite-msg">đang mời bạn vào một ván đấu!</p>
+    <div class="invite-btns">
+      <button id="btn-invite-accept" class="btn-play">Đồng ý</button>
+      <button id="btn-invite-decline" class="btn-guest">Từ chối</button>
+    </div>
+    <div class="invite-expire">
+      Tự động từ chối sau <span id="invite-countdown">30</span>s
+      <div class="invite-progress-bar"><div id="invite-progress" class="invite-progress-fill"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ INVITE SENT MODAL ═══════════════════════ -->
+<div id="modal-invite-sent" class="modal hidden">
+  <div class="modal-content glass" style="max-width:340px;text-align:center;padding:36px">
+    <div class="mm-spinner"></div>
+    <h3 style="margin-top:20px">Đợi phản hồi...</h3>
+    <p id="invite-sent-to" style="color:var(--text2);margin:8px 0 20px">Đang chờ đối thủ</p>
+    <button id="btn-cancel-invite" class="btn-guest">Hủy lời mời</button>
   </div>
 </div>
 
