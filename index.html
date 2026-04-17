@@ -56,7 +56,25 @@
     <div class="nav-user">
       <div class="nav-avatar" id="nav-avatar">G</div>
       <span id="nav-username">Khách</span>
-      <button id="btn-logout" class="btn-icon" title="Đăng xuất">⏻</button>
+      <!-- Theme toggle -->
+      <button id="btn-theme" class="btn-icon" title="Đổi giao diện">🌙</button>
+      <!-- User menu trigger -->
+      <button id="btn-user-menu" class="btn-icon" title="Menu">⋮</button>
+      <!-- Dropdown menu -->
+      <div id="user-menu" class="user-menu hidden glass">
+        <div class="um-profile">
+          <div class="um-avatar" id="um-avatar">G</div>
+          <div>
+            <div class="um-name" id="um-name">Khách</div>
+            <div class="um-elo">ELO <span id="um-elo">1200</span></div>
+          </div>
+        </div>
+        <hr class="um-divider" />
+        <button class="um-item" id="um-theme">🌙 Chế độ tối</button>
+        <button class="um-item" id="um-stats">📊 Thống kê</button>
+        <hr class="um-divider" />
+        <button class="um-item danger" id="btn-logout">⏻ Đăng xuất</button>
+      </div>
     </div>
   </nav>
 
@@ -387,6 +405,80 @@
       </div>
     </div>
     <button id="btn-cancel-mm" class="btn-guest">Hủy</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ CONFIRM MODAL (reusable) ═══════════════════════ -->
+<div id="modal-confirm" class="modal hidden">
+  <div class="modal-content glass confirm-modal">
+    <div class="confirm-icon" id="confirm-icon">⚠️</div>
+    <h3 id="confirm-title">Bạn có chắc không?</h3>
+    <p id="confirm-msg">Hành động này không thể hoàn tác.</p>
+    <div class="confirm-btns">
+      <button id="btn-confirm-ok" class="btn-play">Xác nhận</button>
+      <button id="btn-confirm-cancel" class="btn-guest">Hủy</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SPECTATE VIEW ═══════════════════════ -->
+<div id="view-spectate" class="view">
+  <div class="game-layout">
+    <aside class="game-sidebar left-sidebar glass">
+      <button class="btn-back-sm" id="btn-spectate-back">←</button>
+      <div class="spectate-badge">👁 Đang xem</div>
+      <div class="player-panel opponent-panel">
+        <div class="player-avatar" id="spec-black-avatar">B</div>
+        <div class="player-info">
+          <div class="player-name" id="spec-black-name">Đen</div>
+          <div class="player-rating" id="spec-black-elo">ELO 1200</div>
+        </div>
+        <div class="player-stone stone-black"></div>
+      </div>
+      <div class="capture-panel">
+        <div class="capture-stones">
+          <div class="cap-item"><div class="stone-dot black"></div><span id="spec-cap-black">0</span></div>
+          <div class="cap-item"><div class="stone-dot white"></div><span id="spec-cap-white">0</span></div>
+        </div>
+        <div class="komi-row">Komi: 6.5</div>
+      </div>
+      <div class="move-history glass-inner">
+        <div class="mh-title">Lịch sử</div>
+        <div id="spec-move-list" class="move-list"></div>
+      </div>
+    </aside>
+    <main class="game-center">
+      <div class="status-bar" id="spec-status-bar">
+        <div class="turn-indicator" id="spec-turn-indicator">
+          <div class="turn-stone black"></div>
+          <span id="spec-turn-text">Lượt: Đen</span>
+        </div>
+        <div class="move-counter">Nước: <span id="spec-move-num">0</span></div>
+      </div>
+      <div class="board-wrapper" id="spec-board-wrapper">
+        <canvas id="spec-board" class="go-board"></canvas>
+      </div>
+    </main>
+    <aside class="game-sidebar right-sidebar glass">
+      <div class="player-panel self-panel">
+        <div class="player-avatar" id="spec-white-avatar">W</div>
+        <div class="player-info">
+          <div class="player-name" id="spec-white-name">Trắng</div>
+          <div class="player-rating" id="spec-white-elo">ELO 1200</div>
+        </div>
+        <div class="player-stone stone-white"></div>
+      </div>
+      <div class="board-info glass-inner">
+        <div class="info-row"><span>Trận đấu</span><span id="spec-game-info">19×19</span></div>
+        <div class="info-row"><span>Người xem</span><span id="spec-watchers">1</span></div>
+      </div>
+      <div class="chat-box glass-inner" id="spec-chat-box">
+        <div class="chat-title">Bình luận</div>
+        <div class="chat-messages" id="spec-chat-messages">
+          <div class="chat-msg system">Đang xem trận đấu trực tiếp</div>
+        </div>
+      </div>
+    </aside>
   </div>
 </div>
 

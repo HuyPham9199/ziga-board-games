@@ -535,7 +535,15 @@ async function startGame() {
 
   showView('view-game');
   State.board.resize();
-  startPresence('in-game', { game: 'go', boardSize: State.boardSize });
+  const myName  = State.user?.displayName || 'Bạn';
+  const oppName = mode.startsWith('bot') ? ({ 'bot-easy':'Bot Dễ', 'bot-medium':'Bot Thường', 'bot-hard':'Bot Khó' }[mode]||'Bot') : (mode==='local'?'Người chơi 2':'Đối thủ');
+  startPresence('in-game', {
+    game: 'go', boardSize: State.boardSize,
+    blackName: myColor === BLACK ? myName : oppName,
+    whiteName: myColor === WHITE ? myName : oppName,
+    blackElo: myColor === BLACK ? State.stats.elo : 1200,
+    whiteElo:  myColor === WHITE ? State.stats.elo : 1200,
+  });
 
   if (mode === 'online') {
     await startOnlineGame();
@@ -1056,19 +1064,6 @@ function bindEvents() {
     initLobby();
   });
 
-  // Logout
-  $('btn-logout').addEventListener('click', async () => {
-    stopPresence();
-    if (State.inviteUnsub)    { State.inviteUnsub();    State.inviteUnsub    = null; }
-    if (State.presenceUnsub)  { State.presenceUnsub();  State.presenceUnsub  = null; }
-    await firebaseService.signOut();
-    State.user    = null;
-    State.isGuest = false;
-    State.stats   = { wins: 0, losses: 0, games: 0, elo: 1200 };
-    State.onlinePlayers = [];
-    showView('view-login');
-  });
-
   // Lobby → Setup
   $('card-go').addEventListener('click', () => {
     startPresence('looking', { game: 'go', boardSize: State.boardSize });
@@ -1093,43 +1088,6 @@ function bindEvents() {
       firebaseService.leaveQueue(State.user.uid);
     }
     startPresence('online'); // back to lobby
-    showView('view-lobby');
-  });
-
-  // Online filter tabs
-  document.querySelectorAll('.filter-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      State.onlineFilter = btn.dataset.filter;
-      renderOnlinePanel();
-    });
-  });
-
-  // Online search
-  $('online-search-input').addEventListener('input', e => {
-    State.onlineSearch = e.target.value;
-    renderOnlinePanel();
-  });
-
-  // Invite modal buttons
-  $('btn-invite-accept').addEventListener('click', acceptInvite);
-  $('btn-invite-decline').addEventListener('click', declineInvite);
-
-  // Cancel sent invite
-  $('btn-cancel-invite').addEventListener('click', async () => {
-    if (State.pendingInviteId) {
-      await firebaseService.deleteInvite(State.pendingInviteId);
-      if (State.inviteRespUnsub) { State.inviteRespUnsub(); State.inviteRespUnsub = null; }
-      State.pendingInviteId = null;
-    }
-    hideInviteSentModal();
-  });
-
-  // Result → lobby: restore presence
-  $('btn-to-lobby').addEventListener('click', () => {
-    stopTimer();
-    startPresence('online');
     showView('view-lobby');
   });
 
@@ -1164,6 +1122,43 @@ function bindEvents() {
     showView('view-setup');
   });
 
+  // Online filter tabs
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      State.onlineFilter = btn.dataset.filter;
+      renderOnlinePanel();
+    });
+  });
+
+  // Online search
+  $('online-search-input').addEventListener('input', e => {
+    State.onlineSearch = e.target.value;
+    renderOnlinePanel();
+  });
+
+  // Invite modal buttons
+  $('btn-invite-accept').addEventListener('click', acceptInvite);
+  $('btn-invite-decline').addEventListener('click', declineInvite);
+
+  // Cancel sent invite
+  $('btn-cancel-invite').addEventListener('click', async () => {
+    if (State.pendingInviteId) {
+      await firebaseService.deleteInvite(State.pendingInviteId);
+      if (State.inviteRespUnsub) { State.inviteRespUnsub(); State.inviteRespUnsub = null; }
+      State.pendingInviteId = null;
+    }
+    hideInviteSentModal();
+  });
+
+  // Result → lobby
+  $('btn-to-lobby').addEventListener('click', () => {
+    stopTimer();
+    startPresence('online');
+    showView('view-lobby');
+  });
+
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
     const view = document.querySelector('.view.active');
@@ -1171,28 +1166,321 @@ function bindEvents() {
     if (e.key === 'p' || e.key === 'P') passMove();
     if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoMove(); }
   });
+
+  // Close user menu when clicking outside
+  document.addEventListener('click', e => {
+    const menu = $('user-menu');
+    if (!menu.classList.contains('hidden') &&
+        !menu.contains(e.target) &&
+        e.target !== $('btn-user-menu')) {
+      menu.classList.add('hidden');
+    }
+  });
+
+  // Spectate back button
+  $('btn-spectate-back').addEventListener('click', () => {
+    stopSpectate();
+    showView('view-lobby');
+  });
+
+  // Confirm modal
+  $('btn-confirm-cancel').addEventListener('click', () => {
+    $('modal-confirm').classList.add('hidden');
+    State._confirmReject?.();
+  });
+  $('btn-confirm-ok').addEventListener('click', () => {
+    $('modal-confirm').classList.add('hidden');
+    State._confirmResolve?.();
+  });
+}
+
+/* ════════════════════════════════════════════════
+   THEME
+═══════════════════════════════════════════════ */
+function initTheme() {
+  const saved = localStorage.getItem('ziga-theme') || 'dark';
+  setTheme(saved, false);
+}
+
+function setTheme(theme, save = true) {
+  document.documentElement.setAttribute('data-theme', theme);
+  if (save) localStorage.setItem('ziga-theme', theme);
+
+  const isDark = theme === 'dark';
+  const icon   = isDark ? '🌙' : '☀️';
+  const label  = isDark ? '🌙 Chế độ tối' : '☀️ Chế độ sáng';
+  if ($('btn-theme'))  $('btn-theme').textContent  = icon;
+  if ($('um-theme'))   $('um-theme').textContent   = label;
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  setTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+/* ════════════════════════════════════════════════
+   CONFIRM DIALOG (promise-based)
+═══════════════════════════════════════════════ */
+function showConfirm(opts = {}) {
+  return new Promise((resolve, reject) => {
+    $('confirm-icon').textContent  = opts.icon  || '⚠️';
+    $('confirm-title').textContent = opts.title || 'Bạn có chắc không?';
+    $('confirm-msg').textContent   = opts.msg   || '';
+    $('btn-confirm-ok').textContent = opts.okText || 'Xác nhận';
+    $('btn-confirm-ok').className   = `btn-play${opts.danger ? ' danger-btn' : ''}`;
+    State._confirmResolve = resolve;
+    State._confirmReject  = reject;
+    $('modal-confirm').classList.remove('hidden');
+  });
+}
+
+/* ════════════════════════════════════════════════
+   USER MENU BINDINGS (after DOM ready)
+═══════════════════════════════════════════════ */
+function bindUserMenu() {
+  $('btn-user-menu').addEventListener('click', e => {
+    e.stopPropagation();
+    $('user-menu').classList.toggle('hidden');
+  });
+
+  $('btn-theme').addEventListener('click', toggleTheme);
+  $('um-theme').addEventListener('click', () => {
+    toggleTheme();
+    $('user-menu').classList.add('hidden');
+  });
+
+  // Logout with confirm
+  $('btn-logout').addEventListener('click', async () => {
+    $('user-menu').classList.add('hidden');
+    try {
+      await showConfirm({
+        icon: '⏻', title: 'Đăng xuất?',
+        msg: 'Bạn có chắc muốn đăng xuất không?',
+        okText: 'Đăng xuất', danger: true
+      });
+    } catch { return; } // cancelled
+
+    stopPresence();
+    if (State.inviteUnsub)   { State.inviteUnsub();   State.inviteUnsub   = null; }
+    if (State.presenceUnsub) { State.presenceUnsub(); State.presenceUnsub = null; }
+    await firebaseService.signOut();
+    State.user = null; State.isGuest = false;
+    State.stats = { wins: 0, losses: 0, games: 0, elo: 1200 };
+    State.onlinePlayers = [];
+    updateStats();
+    showView('view-login');
+    toast('Đã đăng xuất', 'info');
+  });
+}
+
+/* ════════════════════════════════════════════════
+   REDESIGNED ONLINE PANEL
+═══════════════════════════════════════════════ */
+function renderOnlinePanel() {
+  const list   = $('online-list');
+  const empty  = $('online-empty');
+  const myId   = State.user?.uid;
+  const search = State.onlineSearch.toLowerCase();
+  const filter = State.onlineFilter;
+
+  // Filter players
+  let players = State.onlinePlayers.filter(p => {
+    if (search && !p.displayName?.toLowerCase().includes(search)) return false;
+    if (filter === 'looking' && p.status !== 'looking')  return false;
+    if (filter === 'in-game' && p.status !== 'in-game')  return false;
+    return true;
+  });
+
+  // Update counters
+  $('online-total').textContent        = State.onlinePlayers.length;
+  $('lobby-online-count').textContent  = State.onlinePlayers.length;
+
+  if (!players.length) {
+    list.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = '';
+
+  // Group into sections
+  const inGame  = players.filter(p => p.status === 'in-game');
+  const looking = players.filter(p => p.status === 'looking');
+  const online  = players.filter(p => p.status === 'online' || !p.status);
+
+  const addSection = (label, count, items) => {
+    if (!items.length) return;
+    const hdr = document.createElement('div');
+    hdr.className   = 'online-section-header';
+    hdr.textContent = `${label} (${count})`;
+    list.appendChild(hdr);
+    items.forEach(p => list.appendChild(buildPlayerRow(p, myId)));
+  };
+
+  addSection('🔴 Đang chơi', inGame.length,  inGame);
+  addSection('🟡 Tìm trận',  looking.length, looking);
+  addSection('🟢 Online',    online.length,  online);
+}
+
+function buildPlayerRow(p, myId) {
+  const isMe      = p.id === myId;
+  const canInvite = !isMe && (p.status === 'online' || p.status === 'looking');
+  const inGame    = p.status === 'in-game';
+
+  const statusLabels = { online: 'Online', looking: 'Tìm trận', 'in-game': 'Đang chơi' };
+  const gameText = p.game === 'go' ? `⬛⬜ Cờ Vây ${p.boardSize || 19}×${p.boardSize || 19}` : '';
+
+  const row = document.createElement('div');
+  row.className = `player-row${isMe ? ' is-me' : ''}`;
+  row.dataset.uid = p.id;
+
+  // Opponent name for in-game (stored as p.vsName)
+  const vsInfo = inGame && p.vsName ? `<div class="pr-vs-info">vs ${escHtml(p.vsName)}</div>` : '';
+  const gameTag = gameText ? `<div class="pr-game-tag">${gameText}</div>` : '';
+
+  let actionBtn = '';
+  if (canInvite) {
+    actionBtn = `<button class="btn-invite" data-uid="${p.id}">Mời</button>`;
+  } else if (inGame && p.gameId) {
+    actionBtn = `<button class="btn-spectate" data-gameid="${p.gameId}" data-bname="${escHtml(p.blackName||'Đen')}" data-wname="${escHtml(p.whiteName||'Trắng')}" data-belo="${p.blackElo||1200}" data-welo="${p.whiteElo||1200}" data-size="${p.boardSize||19}">👁 Xem</button>`;
+  }
+
+  row.innerHTML = `
+    <div class="pr-avatar">
+      ${escHtml((p.avatar || p.displayName?.[0] || '?').toString())}
+      <span class="pr-status-dot ${p.status || 'online'}"></span>
+    </div>
+    <div class="pr-info">
+      <div class="pr-name">${escHtml(p.displayName || 'Ẩn danh')}${isMe ? ' <small style="color:var(--accent);font-size:10px">(bạn)</small>' : ''}</div>
+      <div class="pr-meta">
+        <span class="pr-elo">ELO ${p.elo || 1200}</span>
+        <span class="pr-status-badge ${p.status || 'online'}">${statusLabels[p.status] || 'Online'}</span>
+      </div>
+      ${gameTag}${vsInfo}
+    </div>
+    <div class="pr-actions">${actionBtn}</div>`;
+
+  // Bind action
+  const invBtn  = row.querySelector('.btn-invite');
+  const specBtn = row.querySelector('.btn-spectate');
+  if (invBtn)  invBtn.addEventListener('click',  () => sendInviteTo(p));
+  if (specBtn) specBtn.addEventListener('click', () => {
+    const d = specBtn.dataset;
+    startSpectate(d.gameid, {
+      blackName: d.bname, whiteName: d.wname,
+      blackElo: +d.belo, whiteElo: +d.welo,
+      boardSize: +d.size
+    });
+  });
+
+  return row;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ════════════════════════════════════════════════
+   SPECTATE MODE
+═══════════════════════════════════════════════ */
+const Spectate = {
+  gameUnsub: null,
+  engine:    null,
+  board:     null,
+};
+
+function startSpectate(gameId, info) {
+  if (!firebaseService._ready) { toast('Cần Firebase để xem trận đấu', 'error'); return; }
+
+  // Setup UI
+  $('spec-black-name').textContent = info.blackName;
+  $('spec-white-name').textContent = info.whiteName;
+  $('spec-black-elo').textContent  = `ELO ${info.blackElo}`;
+  $('spec-white-elo').textContent  = `ELO ${info.whiteElo}`;
+  $('spec-black-avatar').textContent = info.blackName?.[0]?.toUpperCase() || 'B';
+  $('spec-white-avatar').textContent = info.whiteName?.[0]?.toUpperCase() || 'W';
+  $('spec-game-info').textContent  = `${info.boardSize}×${info.boardSize}`;
+  $('spec-move-list').innerHTML    = '';
+  $('spec-move-num').textContent   = 0;
+
+  // Create read-only engine & board
+  Spectate.engine = new GoEngine(info.boardSize, 6.5);
+  showView('view-spectate');
+
+  // Small delay so canvas is visible before sizing
+  setTimeout(() => {
+    Spectate.board = new GoBoard('spec-board', Spectate.engine, { onPlace: () => {} });
+    Spectate.board.setDisabled(true);
+    Spectate.board.resize();
+
+    // Listen to Firestore game
+    Spectate.gameUnsub = firebaseService.listenGame(gameId, data => {
+      if (!data) return;
+      Spectate.engine.fromJSON(data);
+      Spectate.board.draw();
+
+      // Update UI
+      const isBlack = Spectate.engine.current === BLACK;
+      $('spec-turn-indicator').querySelector('.turn-stone').className = `turn-stone ${isBlack ? 'black' : 'white'}`;
+      $('spec-turn-text').textContent = `Lượt: ${isBlack ? info.blackName : info.whiteName}`;
+      $('spec-move-num').textContent  = Spectate.engine.history.length;
+      $('spec-cap-black').textContent = Spectate.engine.captures[BLACK];
+      $('spec-cap-white').textContent = Spectate.engine.captures[WHITE];
+
+      // Append latest move to list
+      if (data.moves?.length) {
+        const ml = $('spec-move-list');
+        ml.innerHTML = '';
+        data.moves.slice(-20).forEach((m, i) => {
+          const el = document.createElement('div');
+          const label = m.pass ? 'bỏ lượt' : `${colToLetter(m.x)}${info.boardSize - m.y}`;
+          el.textContent = `${data.moves.length - 20 + i + 1}. ${m.color === BLACK ? '●' : '○'} ${label}`;
+          ml.appendChild(el);
+        });
+        ml.scrollTop = ml.scrollHeight;
+      }
+
+      if (data.status === 'finished') {
+        addChatMsgToEl($('spec-chat-messages'), '🏁 Trận đấu kết thúc', 'system');
+      }
+    });
+
+    toast(`Đang xem trận: ${info.blackName} vs ${info.whiteName}`, 'info');
+  }, 100);
+}
+
+function stopSpectate() {
+  if (Spectate.gameUnsub) { Spectate.gameUnsub(); Spectate.gameUnsub = null; }
+  Spectate.engine = null;
+  Spectate.board  = null;
+}
+
+function addChatMsgToEl(el, text, cls) {
+  const div = document.createElement('div');
+  div.className   = `chat-msg ${cls}`;
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
 }
 
 /* ════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
 async function init() {
+  initTheme();
   showView('view-loading');
   initParticles();
   bindEvents();
+  bindUserMenu();
   initSetup();
 
-  // Init Firebase
   const fbReady = await firebaseService.init();
-
   if (fbReady) {
     firebaseService.onAuthChange(user => handleAuthReady(user));
-    // Auth state may fire quickly; if no user after a moment, show login
-    setTimeout(() => {
-      if (!State.user) showView('view-login');
-    }, 1500);
+    setTimeout(() => { if (!State.user) showView('view-login'); }, 1500);
   } else {
-    // No Firebase: show login with guest option
     setTimeout(() => showView('view-login'), 800);
   }
 }
