@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZIGA – Board Games</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♟</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════ VIEW: LOADING ═══════════════════════ -->
+<div id="view-loading" class="view active">
+  <div class="loader-center">
+    <div class="logo-mark">Z</div>
+    <div class="loader-ring"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: LOGIN ═══════════════════════ -->
+<div id="view-login" class="view">
+  <div class="login-bg">
+    <canvas id="particles-canvas"></canvas>
+  </div>
+  <div class="login-content">
+    <div class="login-brand">
+      <span class="brand-logo">ZIGA</span>
+      <span class="brand-sub">Board Games Arena</span>
+    </div>
+    <div class="login-card glass">
+      <h2>Chào mừng trở lại</h2>
+      <p class="login-desc">Chơi Cờ Vây, Cờ Vua, Cờ Tướng &amp; nhiều hơn nữa</p>
+      <button id="btn-google-login" class="btn-google">
+        <svg viewBox="0 0 48 48" width="22" height="22"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Đăng nhập với Google
+      </button>
+      <div class="divider"><span>hoặc</span></div>
+      <button id="btn-guest" class="btn-guest">Chơi ngay (Khách)</button>
+      <p class="login-note">Đăng nhập để lưu điểm, lịch sử, chơi online</p>
+    </div>
+    <div class="login-games-preview">
+      <div class="game-chip active">♟ Cờ Vây</div>
+      <div class="game-chip coming">♔ Cờ Vua <span class="badge">Sắp ra</span></div>
+      <div class="game-chip coming">將 Cờ Tướng <span class="badge">Sắp ra</span></div>
+      <div class="game-chip coming">🐴 Cờ Cá Ngựa <span class="badge">Sắp ra</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: LOBBY ═══════════════════════ -->
+<div id="view-lobby" class="view">
+  <nav class="topnav glass">
+    <div class="nav-brand">ZIGA</div>
+    <div class="nav-user">
+      <div class="nav-avatar" id="nav-avatar">G</div>
+      <span id="nav-username">Khách</span>
+      <button id="btn-logout" class="btn-icon" title="Đăng xuất">⏻</button>
+    </div>
+  </nav>
+
+  <div class="lobby-container">
+    <!-- Hero -->
+    <section class="lobby-hero">
+      <h1>Chọn trò chơi</h1>
+      <p>Thách thức AI hoặc đấu trực tuyến với người chơi khắp nơi</p>
+    </section>
+
+    <!-- Game Cards -->
+    <section class="game-grid">
+      <div class="game-card go-card active-card" id="card-go">
+        <div class="card-glow"></div>
+        <div class="card-icon">⬛⬜</div>
+        <h3>Cờ Vây</h3>
+        <p>Go · Weiqi · Baduk</p>
+        <div class="card-stats">
+          <span id="lobby-online-count">0</span> người online
+        </div>
+        <button class="btn-play">Chơi ngay</button>
+      </div>
+      <div class="game-card locked-card">
+        <div class="lock-overlay">🔒</div>
+        <div class="card-icon">♔</div>
+        <h3>Cờ Vua</h3>
+        <p>Chess · Schach</p>
+        <div class="coming-soon">Sắp ra mắt</div>
+      </div>
+      <div class="game-card locked-card">
+        <div class="lock-overlay">🔒</div>
+        <div class="card-icon">將</div>
+        <h3>Cờ Tướng</h3>
+        <p>Chinese Chess</p>
+        <div class="coming-soon">Sắp ra mắt</div>
+      </div>
+      <div class="game-card locked-card">
+        <div class="lock-overlay">🔒</div>
+        <div class="card-icon">🐴</div>
+        <h3>Cờ Cá Ngựa</h3>
+        <p>Ludo</p>
+        <div class="coming-soon">Sắp ra mắt</div>
+      </div>
+    </section>
+
+    <!-- Quick Stats -->
+    <section class="stats-row" id="player-stats">
+      <div class="stat-card glass">
+        <div class="stat-icon">🏆</div>
+        <div class="stat-val" id="stat-wins">0</div>
+        <div class="stat-label">Thắng</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon">💀</div>
+        <div class="stat-val" id="stat-losses">0</div>
+        <div class="stat-label">Thua</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon">🎮</div>
+        <div class="stat-val" id="stat-games">0</div>
+        <div class="stat-label">Ván đã chơi</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon">⭐</div>
+        <div class="stat-val" id="stat-elo">1200</div>
+        <div class="stat-label">ELO</div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: GAME SETUP ═══════════════════════ -->
+<div id="view-setup" class="view">
+  <div class="setup-container">
+    <button class="btn-back" id="btn-setup-back">← Quay lại</button>
+    <h2 class="setup-title">Cờ Vây</h2>
+
+    <!-- Mode Selection -->
+    <div class="setup-section">
+      <h3>Chế độ chơi</h3>
+      <div class="mode-grid">
+        <div class="mode-card" data-mode="online" id="mode-online">
+          <div class="mode-icon">🌐</div>
+          <div class="mode-name">Online</div>
+          <div class="mode-desc">Ghép cặp ngẫu nhiên</div>
+        </div>
+        <div class="mode-card" data-mode="bot-easy">
+          <div class="mode-icon">🤖</div>
+          <div class="mode-name">Bot Dễ</div>
+          <div class="mode-desc">Bước đầu làm quen</div>
+        </div>
+        <div class="mode-card" data-mode="bot-medium">
+          <div class="mode-icon">🤖</div>
+          <div class="mode-name">Bot Thường</div>
+          <div class="mode-desc">Chiến thuật cơ bản</div>
+        </div>
+        <div class="mode-card selected" data-mode="bot-hard">
+          <div class="mode-icon">🔥</div>
+          <div class="mode-name">Bot Khó</div>
+          <div class="mode-desc">Thử thách cao</div>
+        </div>
+        <div class="mode-card" data-mode="local">
+          <div class="mode-icon">👥</div>
+          <div class="mode-name">2 Người</div>
+          <div class="mode-desc">Cùng thiết bị</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Board Size -->
+    <div class="setup-section">
+      <h3>Kích thước bàn cờ</h3>
+      <div class="size-btns">
+        <button class="size-btn" data-size="9">9×9<span>Người mới</span></button>
+        <button class="size-btn" data-size="13">13×13<span>Trung cấp</span></button>
+        <button class="size-btn selected" data-size="19">19×19<span>Chuẩn</span></button>
+      </div>
+    </div>
+
+    <!-- Color -->
+    <div class="setup-section">
+      <h3>Màu quân</h3>
+      <div class="color-btns">
+        <button class="color-btn selected" data-color="black">⬛ Đen (đi trước)</button>
+        <button class="color-btn" data-color="white">⬜ Trắng</button>
+        <button class="color-btn" data-color="random">🎲 Ngẫu nhiên</button>
+      </div>
+    </div>
+
+    <!-- Time Control -->
+    <div class="setup-section">
+      <h3>Thời gian</h3>
+      <div class="time-btns">
+        <button class="time-btn" data-time="0">Không giới hạn</button>
+        <button class="time-btn selected" data-time="600">10 phút</button>
+        <button class="time-btn" data-time="1800">30 phút</button>
+        <button class="time-btn" data-time="3600">1 giờ</button>
+      </div>
+    </div>
+
+    <button id="btn-start-game" class="btn-start">Bắt đầu chơi →</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: GAME ═══════════════════════ -->
+<div id="view-game" class="view">
+  <div class="game-layout">
+
+    <!-- LEFT: Player info + Controls -->
+    <aside class="game-sidebar left-sidebar glass">
+      <button class="btn-back-sm" id="btn-game-back" title="Quay lại sảnh">←</button>
+
+      <!-- Opponent info -->
+      <div class="player-panel opponent-panel" id="panel-opponent">
+        <div class="player-avatar" id="opp-avatar">?</div>
+        <div class="player-info">
+          <div class="player-name" id="opp-name">Đối thủ</div>
+          <div class="player-rating" id="opp-rating">ELO 1200</div>
+        </div>
+        <div class="player-stone stone-white"></div>
+      </div>
+
+      <!-- Timer -->
+      <div class="timer-box" id="timer-opp">
+        <span id="timer-opp-val">10:00</span>
+      </div>
+
+      <!-- Capture info -->
+      <div class="capture-panel">
+        <div class="capture-row">
+          <span>Quân bắt được:</span>
+        </div>
+        <div class="capture-stones">
+          <div class="cap-item"><div class="stone-dot black"></div><span id="cap-black">0</span></div>
+          <div class="cap-item"><div class="stone-dot white"></div><span id="cap-white">0</span></div>
+        </div>
+        <div class="komi-row">Komi: <span id="komi-val">6.5</span></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="game-controls">
+        <button class="ctrl-btn" id="btn-pass">Bỏ lượt</button>
+        <button class="ctrl-btn danger" id="btn-resign">Đầu hàng</button>
+        <button class="ctrl-btn" id="btn-undo" title="Chỉ dành cho ván offline">↩ Hủy</button>
+      </div>
+
+      <!-- Move history -->
+      <div class="move-history glass-inner">
+        <div class="mh-title">Lịch sử nước đi</div>
+        <div id="move-list" class="move-list"></div>
+      </div>
+    </aside>
+
+    <!-- CENTER: Board -->
+    <main class="game-center">
+      <div class="status-bar" id="status-bar">
+        <div class="turn-indicator" id="turn-indicator">
+          <div class="turn-stone black"></div>
+          <span id="turn-text">Lượt: Đen</span>
+        </div>
+        <div class="move-counter">Nước: <span id="move-num">0</span></div>
+      </div>
+
+      <div class="board-wrapper" id="board-wrapper">
+        <canvas id="go-board" class="go-board"></canvas>
+        <!-- Coordinate labels injected by JS -->
+      </div>
+
+      <!-- Scoring overlay -->
+      <div id="scoring-overlay" class="scoring-overlay hidden">
+        <div class="scoring-card glass">
+          <h2>Kết quả ván đấu</h2>
+          <div class="score-grid">
+            <div class="score-col black-col">
+              <div class="score-stone">⬛</div>
+              <div class="score-name" id="result-black-name">Đen</div>
+              <div class="score-num" id="result-black">0</div>
+              <div class="score-breakdown" id="result-black-detail"></div>
+            </div>
+            <div class="score-vs">VS</div>
+            <div class="score-col white-col">
+              <div class="score-stone">⬜</div>
+              <div class="score-name" id="result-white-name">Trắng</div>
+              <div class="score-num" id="result-white">0</div>
+              <div class="score-breakdown" id="result-white-detail"></div>
+            </div>
+          </div>
+          <div class="winner-banner" id="winner-banner">Đen thắng!</div>
+          <div class="result-btns">
+            <button id="btn-rematch" class="btn-play">Đánh lại</button>
+            <button id="btn-to-lobby" class="btn-guest">Về sảnh</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT: Chat + Info -->
+    <aside class="game-sidebar right-sidebar glass">
+      <!-- Self info -->
+      <div class="player-panel self-panel" id="panel-self">
+        <div class="player-avatar" id="self-avatar">M</div>
+        <div class="player-info">
+          <div class="player-name" id="self-name">Bạn</div>
+          <div class="player-rating" id="self-rating">ELO 1200</div>
+        </div>
+        <div class="player-stone stone-black"></div>
+      </div>
+
+      <!-- Timer self -->
+      <div class="timer-box active" id="timer-self">
+        <span id="timer-self-val">10:00</span>
+      </div>
+
+      <!-- Board info -->
+      <div class="board-info glass-inner">
+        <div class="info-row"><span>Bàn cờ</span><span id="info-size">19×19</span></div>
+        <div class="info-row"><span>Chế độ</span><span id="info-mode">Bot Khó</span></div>
+        <div class="info-row"><span>Lượt</span><span id="info-move">0</span></div>
+      </div>
+
+      <!-- Chat -->
+      <div class="chat-box glass-inner" id="chat-box">
+        <div class="chat-title">Chat <span id="chat-status" class="dot-online"></span></div>
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-msg system">Chào mừng bạn đến với ZIGA!</div>
+        </div>
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" placeholder="Nhắn tin..." maxlength="120" />
+          <button id="btn-chat-send" class="btn-send">➤</button>
+        </div>
+        <div class="quick-chats">
+          <button class="qc" data-msg="Chúc bạn chơi vui!">👋 Chào</button>
+          <button class="qc" data-msg="Gg!">GG!</button>
+          <button class="qc" data-msg="Nước đó hay đấy!">👏 Hay!</button>
+          <button class="qc" data-msg="Hẹn gặp lại!">👋 Bye</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═══════════════════════ MATCHMAKING MODAL ═══════════════════════ -->
+<div id="modal-matchmaking" class="modal hidden">
+  <div class="modal-content glass">
+    <div class="mm-spinner"></div>
+    <h3>Đang tìm đối thủ...</h3>
+    <p id="mm-status">Đang kết nối</p>
+    <div class="mm-players">
+      <div class="mm-player">
+        <div class="player-avatar" id="mm-self-avatar">M</div>
+        <span id="mm-self-name">Bạn</span>
+      </div>
+      <div class="mm-vs">VS</div>
+      <div class="mm-player">
+        <div class="player-avatar mm-opponent-avatar">?</div>
+        <span>Đang tìm...</span>
+      </div>
+    </div>
+    <button id="btn-cancel-mm" class="btn-guest">Hủy</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ TOAST ═══════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- Scripts -->
+<script src="js/go-engine.js"></script>
+<script src="js/go-bot.js"></script>
+<script src="js/go-board.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
