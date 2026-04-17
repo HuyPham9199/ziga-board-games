@@ -99,12 +99,13 @@
           </div>
           <button class="btn-play">Chơi ngay</button>
         </div>
-        <div class="game-card locked-card">
-          <div class="lock-overlay">🔒</div>
+        <div class="game-card chess-card active-card" id="card-chess">
+          <div class="card-glow"></div>
           <div class="card-icon">♔</div>
           <h3>Cờ Vua</h3>
           <p>Chess · Schach</p>
-          <div class="coming-soon">Sắp ra mắt</div>
+          <div class="card-stats"><span>Mới ra mắt!</span></div>
+          <button class="btn-play">Chơi ngay</button>
         </div>
         <div class="game-card locked-card">
           <div class="lock-overlay">🔒</div>
@@ -171,6 +172,174 @@
           <div class="online-empty-icon">🌐</div>
           <p>Chưa có ai online</p>
           <small>Đăng nhập để thấy người chơi khác</small>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: CHESS SETUP ═══════════════════════ -->
+<div id="view-chess-setup" class="view">
+  <div class="setup-container">
+    <button class="btn-back" id="btn-chess-setup-back">← Quay lại</button>
+    <h2 class="setup-title">♔ Cờ Vua</h2>
+
+    <div class="setup-section">
+      <h3>Chế độ chơi</h3>
+      <div class="mode-grid">
+        <div class="mode-card" data-chess-mode="bot-easy">
+          <div class="mode-icon">🤖</div>
+          <div class="mode-name">Bot Dễ</div>
+          <div class="mode-desc">Dành cho người mới</div>
+        </div>
+        <div class="mode-card" data-chess-mode="bot-medium">
+          <div class="mode-icon">🤖</div>
+          <div class="mode-name">Bot Thường</div>
+          <div class="mode-desc">Chiến thuật cơ bản</div>
+        </div>
+        <div class="mode-card selected" data-chess-mode="bot-hard">
+          <div class="mode-icon">🔥</div>
+          <div class="mode-name">Bot Khó</div>
+          <div class="mode-desc">Thách thức cao</div>
+        </div>
+        <div class="mode-card" data-chess-mode="local">
+          <div class="mode-icon">👥</div>
+          <div class="mode-name">2 Người</div>
+          <div class="mode-desc">Cùng thiết bị</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Màu quân</h3>
+      <div class="color-btns">
+        <button class="chess-color-btn selected" data-chess-color="white">♔ Trắng (đi trước)</button>
+        <button class="chess-color-btn" data-chess-color="black">♚ Đen</button>
+        <button class="chess-color-btn" data-chess-color="random">🎲 Ngẫu nhiên</button>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Thời gian</h3>
+      <div class="time-btns">
+        <button class="chess-time-btn" data-chess-time="0">Không giới hạn</button>
+        <button class="chess-time-btn selected" data-chess-time="300">5 phút</button>
+        <button class="chess-time-btn" data-chess-time="600">10 phút</button>
+        <button class="chess-time-btn" data-chess-time="1800">30 phút</button>
+      </div>
+    </div>
+
+    <button id="btn-start-chess" class="btn-start">Bắt đầu chơi →</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VIEW: CHESS GAME ═══════════════════════ -->
+<div id="view-chess-game" class="view">
+  <div class="game-layout">
+
+    <aside class="game-sidebar left-sidebar glass">
+      <button class="btn-back-sm" id="btn-chess-back">←</button>
+
+      <div class="player-panel opponent-panel" id="chess-panel-opponent">
+        <div class="player-avatar" id="chess-opp-avatar">?</div>
+        <div class="player-info">
+          <div class="player-name" id="chess-opp-name">Đối thủ</div>
+          <div class="player-rating" id="chess-opp-rating">ELO 1200</div>
+        </div>
+        <div class="player-stone" id="chess-opp-stone">♚</div>
+      </div>
+
+      <div class="timer-box" id="chess-timer-opp">
+        <span id="chess-timer-opp-val">5:00</span>
+      </div>
+
+      <div class="capture-panel">
+        <div class="capture-row"><span>Quân bắt được:</span></div>
+        <div id="chess-captured-by-me" class="chess-captured-row"></div>
+        <div id="chess-captured-by-opp" class="chess-captured-row"></div>
+      </div>
+
+      <div class="game-controls">
+        <button class="ctrl-btn danger" id="btn-chess-resign">Đầu hàng</button>
+        <button class="ctrl-btn" id="btn-chess-undo">↩ Hủy</button>
+      </div>
+
+      <div class="move-history glass-inner">
+        <div class="mh-title">Lịch sử nước đi</div>
+        <div id="chess-move-list" class="move-list"></div>
+      </div>
+    </aside>
+
+    <main class="game-center">
+      <div class="status-bar" id="chess-status-bar">
+        <div class="turn-indicator" id="chess-turn-indicator">
+          <span id="chess-turn-text">Lượt: Trắng</span>
+        </div>
+        <div class="move-counter">Nước: <span id="chess-move-num">0</span></div>
+        <div id="chess-check-badge" class="check-badge hidden">♛ Chiếu!</div>
+      </div>
+
+      <div class="board-wrapper" id="chess-board-wrapper">
+        <canvas id="chess-board" class="go-board"></canvas>
+      </div>
+
+      <!-- Promotion modal -->
+      <div id="chess-promo-modal" class="chess-promo-modal hidden">
+        <div class="chess-promo-card glass">
+          <p>Chọn quân phong cấp:</p>
+          <div class="chess-promo-choices">
+            <button class="promo-btn" data-piece="Q">♕</button>
+            <button class="promo-btn" data-piece="R">♖</button>
+            <button class="promo-btn" data-piece="B">♗</button>
+            <button class="promo-btn" data-piece="N">♘</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="chess-result-overlay" class="scoring-overlay hidden">
+        <div class="scoring-card glass">
+          <h2 id="chess-result-title">Kết quả</h2>
+          <div class="winner-banner" id="chess-winner-banner">Trắng thắng!</div>
+          <div class="result-btns">
+            <button id="btn-chess-rematch" class="btn-play">Đánh lại</button>
+            <button id="btn-chess-to-lobby" class="btn-guest">Về sảnh</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="game-sidebar right-sidebar glass">
+      <div class="player-panel self-panel" id="chess-panel-self">
+        <div class="player-avatar" id="chess-self-avatar">M</div>
+        <div class="player-info">
+          <div class="player-name" id="chess-self-name">Bạn</div>
+          <div class="player-rating" id="chess-self-rating">ELO 1200</div>
+        </div>
+        <div class="player-stone" id="chess-self-stone">♔</div>
+      </div>
+
+      <div class="timer-box active" id="chess-timer-self">
+        <span id="chess-timer-self-val">5:00</span>
+      </div>
+
+      <div class="board-info glass-inner">
+        <div class="info-row"><span>Chế độ</span><span id="chess-info-mode">Bot Khó</span></div>
+        <div class="info-row"><span>Nước đi</span><span id="chess-info-move">0</span></div>
+      </div>
+
+      <div class="chat-box glass-inner">
+        <div class="chat-title">Chat</div>
+        <div class="chat-messages" id="chess-chat-messages">
+          <div class="chat-msg system">Chào mừng đến với Cờ Vua!</div>
+        </div>
+        <div class="chat-input-row">
+          <input id="chess-chat-input" type="text" placeholder="Nhắn tin..." maxlength="120" />
+          <button id="btn-chess-chat-send" class="btn-send">➤</button>
+        </div>
+        <div class="quick-chats">
+          <button class="qc-chess" data-msg="Chúc bạn chơi vui!">👋 Chào</button>
+          <button class="qc-chess" data-msg="Gg!">GG!</button>
+          <button class="qc-chess" data-msg="Nước hay!">👏</button>
         </div>
       </div>
     </aside>
@@ -521,6 +690,9 @@
 <script src="js/go-engine.js"></script>
 <script src="js/go-bot.js"></script>
 <script src="js/go-board.js"></script>
+<script src="js/chess-engine.js"></script>
+<script src="js/chess-bot.js"></script>
+<script src="js/chess-board.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/app.js"></script>
 </body>

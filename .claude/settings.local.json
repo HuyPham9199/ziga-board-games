@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check js/chess-engine.js)",
+      "Bash(node --check js/chess-bot.js)",
+      "Bash(node --check js/chess-board.js)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}

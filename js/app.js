@@ -215,91 +215,6 @@ function stopPresence() {
 }
 
 /* ════════════════════════════════════════════════
-   ONLINE PANEL RENDER
-═══════════════════════════════════════════════ */
-function renderOnlinePanel() {
-  const list    = $('online-list');
-  const empty   = $('online-empty');
-  const myId    = State.user?.uid;
-  const search  = State.onlineSearch.toLowerCase();
-  const filter  = State.onlineFilter;
-
-  let players = State.onlinePlayers.filter(p => {
-    if (search && !p.displayName?.toLowerCase().includes(search)) return false;
-    if (filter === 'looking'  && p.status !== 'looking')  return false;
-    if (filter === 'in-game'  && p.status !== 'in-game')  return false;
-    return true;
-  });
-
-  // Count update
-  $('online-total').textContent = State.onlinePlayers.length;
-  $('lobby-online-count').textContent = State.onlinePlayers.length;
-
-  if (!players.length) {
-    list.innerHTML = '';
-    empty.style.display = 'flex';
-    return;
-  }
-  empty.style.display = 'none';
-
-  // Sort: self first, then looking, then online, then in-game
-  const order = { looking: 0, online: 1, 'in-game': 2 };
-  players.sort((a, b) => {
-    if (a.id === myId) return -1;
-    if (b.id === myId) return 1;
-    return (order[a.status] ?? 9) - (order[b.status] ?? 9);
-  });
-
-  list.innerHTML = '';
-  players.forEach(p => list.appendChild(buildPlayerRow(p, myId)));
-}
-
-function buildPlayerRow(p, myId) {
-  const isMe     = p.id === myId;
-  const canInvite = !isMe && (p.status === 'online' || p.status === 'looking');
-  const inGame    = p.status === 'in-game';
-
-  const statusLabel = { online: 'Online', looking: 'Tìm trận', 'in-game': 'Đang chơi' };
-  const gameLabel   = p.game === 'go' ? `Cờ Vây ${p.boardSize || 19}×${p.boardSize || 19}` : '';
-
-  const row = document.createElement('div');
-  row.className = `player-row${isMe ? ' is-me' : ''}`;
-  row.dataset.uid = p.id;
-
-  row.innerHTML = `
-    <div class="pr-avatar">
-      ${p.avatar || '?'}
-      <span class="pr-status-dot ${p.status}"></span>
-    </div>
-    <div class="pr-info">
-      <div class="pr-name">${escHtml(p.displayName || 'Ẩn danh')}${isMe ? ' <small style="color:var(--accent);font-size:10px">(bạn)</small>' : ''}</div>
-      <div class="pr-meta">
-        <span class="pr-elo">ELO ${p.elo || 1200}</span>
-        <span class="pr-status-badge ${p.status}">${statusLabel[p.status] || 'Online'}</span>
-        ${gameLabel ? `<span class="pr-game-info">${gameLabel}</span>` : ''}
-      </div>
-    </div>
-    <div class="pr-actions">
-      ${canInvite
-        ? `<button class="btn-invite" data-uid="${p.id}" data-name="${escHtml(p.displayName)}" data-elo="${p.elo||1200}">Mời</button>`
-        : inGame
-          ? `<button class="btn-spectate" disabled title="Tính năng xem ván sắp ra mắt">Xem</button>`
-          : ''
-      }
-    </div>`;
-
-  // Invite button click
-  const invBtn = row.querySelector('.btn-invite');
-  if (invBtn) invBtn.addEventListener('click', () => sendInviteTo(p));
-
-  return row;
-}
-
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-/* ════════════════════════════════════════════════
    SEND INVITE
 ═══════════════════════════════════════════════ */
 async function sendInviteTo(target) {
@@ -1071,6 +986,97 @@ function bindEvents() {
     initLobby();
   });
 
+  // Lobby → Chess Setup
+  $('card-chess').addEventListener('click', () => showView('view-chess-setup'));
+  document.querySelector('#card-chess .btn-play').addEventListener('click', e => {
+    e.stopPropagation();
+    showView('view-chess-setup');
+  });
+
+  // Chess setup back
+  $('btn-chess-setup-back').addEventListener('click', () => showView('view-lobby'));
+
+  // Start chess
+  $('btn-start-chess').addEventListener('click', startChessGame);
+
+  // Chess game controls
+  $('btn-chess-back').addEventListener('click', async () => {
+    stopChessTimer();
+    showView('view-lobby');
+  });
+
+  $('btn-chess-resign').addEventListener('click', async () => {
+    try {
+      await showConfirm({ icon: '🏳', title: 'Đầu hàng?', msg: 'Bạn có chắc muốn đầu hàng không?', okText: 'Đầu hàng', danger: true });
+    } catch { return; }
+    stopChessTimer();
+    const winner = Chess.myColor === 'w' ? 'b' : 'w';
+    showChessResult({ type: 'resign', winner });
+  });
+
+  $('btn-chess-undo').addEventListener('click', () => {
+    const engine = Chess.engine;
+    if (!engine) return;
+    if (Chess.gameMode !== 'local') {
+      engine.undo(); // undo bot's move
+      if (engine.history.length && engine.current !== Chess.myColor) engine.undo(); // undo player's move
+    } else {
+      engine.undo();
+    }
+    Chess.board.setEngine(engine);
+    Chess.board.reset();
+    $('chess-info-move').textContent = engine.history.length;
+    $('chess-move-num').textContent  = engine.history.length;
+    $('chess-check-badge').classList.toggle('hidden', !engine.inCheck);
+    updateChessCaptured();
+    Chess.board.setDisabled(Chess.gameMode !== 'local' && engine.current !== Chess.myColor);
+    chessUpdateTurnIndicator();
+    toast('Đã hủy nước đi', 'info');
+  });
+
+  $('btn-chess-rematch').addEventListener('click', () => {
+    $('chess-result-overlay').classList.add('hidden');
+    startChessGame();
+  });
+
+  $('btn-chess-to-lobby').addEventListener('click', () => {
+    stopChessTimer();
+    showView('view-lobby');
+  });
+
+  // Promotion modal
+  document.querySelectorAll('.promo-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('chess-promo-modal').classList.add('hidden');
+      if (!Chess.pendingPromo) return;
+      const { from, to } = Chess.pendingPromo;
+      Chess.pendingPromo = null;
+      onChessPlayerMove(from, to, btn.dataset.piece);
+    });
+  });
+
+  // Chess chat
+  const chessChat = () => {
+    const input = $('chess-chat-input');
+    const text  = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    const name = State.user?.displayName || 'Bạn';
+    addChatMsgToEl($('chess-chat-messages'), `${name}: ${text}`, 'self');
+    if (Chess.gameMode !== 'local' && Math.random() < 0.25) {
+      const replies = ['🤔', 'Hm...', 'OK!', 'Hay đấy!'];
+      setTimeout(() => addChatMsgToEl($('chess-chat-messages'), `Bot: ${replies[Math.floor(Math.random()*replies.length)]}`, 'opp'), 900);
+    }
+  };
+  $('btn-chess-chat-send').addEventListener('click', chessChat);
+  $('chess-chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') chessChat(); });
+  document.querySelectorAll('.qc-chess').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('chess-chat-input').value = btn.dataset.msg;
+      chessChat();
+    });
+  });
+
   // Lobby → Setup
   $('card-go').addEventListener('click', () => {
     startPresence('looking', { game: 'go', boardSize: State.boardSize });
@@ -1390,6 +1396,385 @@ function escHtml(str) {
 }
 
 /* ════════════════════════════════════════════════
+   CHESS STATE
+═══════════════════════════════════════════════ */
+const Chess = {
+  engine:      null,
+  board:       null,
+  bot:         null,
+  myColor:     'w',      // 'w' | 'b'
+  gameMode:    'bot-hard',
+  timeControl: 300,
+  timers:      { w: 300, b: 300 },
+  timerInterval: null,
+  pendingPromo: null,    // { from, to } waiting for piece selection
+};
+
+/* ════════════════════════════════════════════════
+   CHESS SETUP
+═══════════════════════════════════════════════ */
+function initChessSetup() {
+  document.querySelectorAll('[data-chess-mode]').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('[data-chess-mode]').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      Chess.gameMode = card.dataset.chessMode;
+    });
+  });
+
+  document.querySelectorAll('.chess-color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.chess-color-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      const c = btn.dataset.chessColor;
+      if (c === 'white') Chess.myColor = 'w';
+      else if (c === 'black') Chess.myColor = 'b';
+      else Chess.myColor = Math.random() < 0.5 ? 'w' : 'b';
+    });
+  });
+
+  document.querySelectorAll('.chess-time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.chess-time-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      Chess.timeControl = parseInt(btn.dataset.chessTime);
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════
+   START CHESS GAME
+═══════════════════════════════════════════════ */
+function startChessGame() {
+  Chess.engine = new ChessEngine();
+  Chess.pendingPromo = null;
+
+  const myColor  = Chess.myColor;
+  const mode     = Chess.gameMode;
+  const myName   = State.user?.displayName || 'Bạn';
+  const botNames = { 'bot-easy': 'Bot Dễ', 'bot-medium': 'Bot Thường', 'bot-hard': 'Bot Khó' };
+  const oppName  = mode.startsWith('bot') ? (botNames[mode] || 'Bot') : 'Người chơi 2';
+
+  // Setup UI
+  const selfStone = myColor === 'w' ? '♔' : '♚';
+  const oppStone  = myColor === 'w' ? '♚' : '♔';
+  $('chess-self-avatar').textContent  = myName[0].toUpperCase();
+  $('chess-self-name').textContent    = myName;
+  $('chess-self-rating').textContent  = `ELO ${State.stats.elo}`;
+  $('chess-self-stone').textContent   = selfStone;
+  $('chess-opp-avatar').textContent   = mode.startsWith('bot') ? '🤖' : oppName[0].toUpperCase();
+  $('chess-opp-name').textContent     = oppName;
+  $('chess-opp-rating').textContent   = { 'bot-easy':'ELO 800', 'bot-medium':'ELO 1200', 'bot-hard':'ELO 1800' }[mode] || 'ELO 1200';
+  $('chess-opp-stone').textContent    = oppStone;
+  $('chess-info-mode').textContent    = botNames[mode] || '2 Người';
+  $('chess-info-move').textContent    = 0;
+  $('chess-move-list').innerHTML      = '';
+  $('chess-result-overlay').classList.add('hidden');
+  $('chess-check-badge').classList.add('hidden');
+  $('chess-captured-by-me').innerHTML  = '';
+  $('chess-captured-by-opp').innerHTML = '';
+
+  // Timer
+  const t = Chess.timeControl > 0 ? Chess.timeControl : 0;
+  Chess.timers = { w: t, b: t };
+  chessUpdateTimerDisplay();
+
+  showView('view-chess-game');
+
+  // Create board after view is visible
+  setTimeout(() => {
+    Chess.board = new ChessBoard('chess-board', (from, to, promoTo) => {
+      onChessPlayerMove(from, to, promoTo);
+    });
+    Chess.board.setEngine(Chess.engine);
+    Chess.board.setFlipped(myColor === 'b');
+    Chess.board.resize();
+
+    if (mode.startsWith('bot')) {
+      const diff = mode.replace('bot-', '');
+      Chess.bot  = new ChessBot(diff);
+      // If player is black, bot (white) goes first
+      if (myColor === 'b') {
+        Chess.board.setDisabled(true);
+        doChessBotMove();
+      } else {
+        Chess.board.setDisabled(false);
+      }
+    } else {
+      Chess.bot = null;
+      Chess.board.setDisabled(false); // local: allow all moves
+    }
+
+    if (Chess.timeControl > 0) startChessTimer();
+  }, 80);
+}
+
+/* ════════════════════════════════════════════════
+   CHESS MOVE HANDLER
+═══════════════════════════════════════════════ */
+function onChessPlayerMove(from, to, promoTo) {
+  const engine = Chess.engine;
+  const mode   = Chess.gameMode;
+
+  // Check if promotion is needed
+  const piece    = engine.board[from[0]][from[1]];
+  const promoRow = piece && piece[0] === 'w' ? 0 : 7;
+  const isPromo  = piece && piece[1] === 'P' && to[0] === promoRow;
+
+  if (isPromo && !promoTo) {
+    // Show promotion picker
+    Chess.pendingPromo = { from, to };
+    showChessPromoModal(piece[0]);
+    return;
+  }
+
+  const result = engine.move(from, to, promoTo || 'Q');
+  if (!result) return;
+
+  Chess.board.applyMove(from, to);
+  Chess.board.setEngine(engine);
+  afterChessMove(result);
+
+  if (engine.gameOver) { endChessGame(); return; }
+
+  if (mode.startsWith('bot')) {
+    Chess.board.setDisabled(true);
+    doChessBotMove();
+  } else {
+    // Local: always enabled, just update display
+    Chess.board.setDisabled(false);
+  }
+}
+
+function showChessPromoModal(color) {
+  const modal   = $('chess-promo-modal');
+  const choices = modal.querySelectorAll('.promo-btn');
+  // Show correct color symbols
+  const pieces  = color === 'w'
+    ? { Q:'♕', R:'♖', B:'♗', N:'♘' }
+    : { Q:'♛', R:'♜', B:'♝', N:'♞' };
+  choices.forEach(btn => { btn.textContent = pieces[btn.dataset.piece]; });
+  modal.classList.remove('hidden');
+}
+
+async function doChessBotMove() {
+  const engine = Chess.engine;
+  if (!Chess.bot || engine.gameOver) return;
+
+  $('chess-turn-text').textContent = 'Bot đang suy nghĩ...';
+
+  let move;
+  try {
+    move = await Chess.bot.getMove(engine);
+  } catch (e) {
+    console.error('Chess bot error:', e);
+    move = null;
+  }
+
+  if (!move || engine.gameOver) return;
+
+  const result = engine.move(move.from, move.to, move.promo || 'Q');
+  if (!result) return;
+
+  Chess.board.applyMove(move.from, move.to);
+  Chess.board.setEngine(engine);
+  afterChessMove(result);
+
+  if (engine.gameOver) {
+    endChessGame();
+  } else {
+    Chess.board.setDisabled(engine.current !== Chess.myColor);
+    chessUpdateTurnIndicator();
+  }
+}
+
+function afterChessMove(move) {
+  const engine = Chess.engine;
+  $('chess-info-move').textContent = engine.history.length;
+  $('chess-move-num').textContent  = engine.history.length;
+
+  // Update check badge
+  if (engine.inCheck) {
+    $('chess-check-badge').classList.remove('hidden');
+  } else {
+    $('chess-check-badge').classList.add('hidden');
+  }
+
+  // Captured pieces display
+  updateChessCaptured();
+
+  // Move history
+  const entry = document.createElement('div');
+  const num   = Math.ceil(engine.history.length / 2);
+  const isWhiteMove = move.piece[0] === 'w';
+  const pieceSymbol = CHESS_UNICODE[move.piece] || '';
+  const fileStr = String.fromCharCode(97 + move.to[1]);
+  const rankStr = 8 - move.to[0];
+  const captStr = move.captured ? 'x' : '';
+  const label   = `${pieceSymbol}${captStr}${fileStr}${rankStr}${move.promo ? '=♕' : ''}${engine.inCheck ? '+' : ''}`;
+  if (isWhiteMove) {
+    entry.textContent = `${num}. ${label}`;
+    entry.id = `chess-move-${engine.history.length}`;
+  } else {
+    const prev = $(`chess-move-${engine.history.length - 1}`);
+    if (prev) { prev.textContent += `  ${label}`; }
+    else { entry.textContent = `${num}. ... ${label}`; }
+  }
+  if (entry.textContent) $('chess-move-list').appendChild(entry);
+  $('chess-move-list').scrollTop = $('chess-move-list').scrollHeight;
+
+  chessUpdateTurnIndicator();
+  chessUpdateTimerDisplay();
+}
+
+function updateChessCaptured() {
+  const engine  = Chess.engine;
+  const myColor = Chess.myColor;
+  const oppColor = myColor === 'w' ? 'b' : 'w';
+
+  // Tally captured pieces from board
+  const initial = { P:8, N:2, B:2, R:2, Q:1 };
+  const onBoard = { w:{}, b:{} };
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = engine.board[r][c];
+    if (!p) continue;
+    onBoard[p[0]][p[1]] = (onBoard[p[0]][p[1]] || 0) + 1;
+  }
+  const capturedByMe  = {}; // pieces of opp color captured by me
+  const capturedByOpp = {};
+  for (const [t, cnt] of Object.entries(initial)) {
+    const byMe  = cnt - (onBoard[oppColor][t] || 0);
+    const byOpp = cnt - (onBoard[myColor][t]  || 0);
+    if (byMe  > 0) capturedByMe[t]  = byMe;
+    if (byOpp > 0) capturedByOpp[t] = byOpp;
+  }
+
+  const renderCaps = (el, caps, color) => {
+    el.innerHTML = '';
+    const order = ['Q','R','B','N','P'];
+    let total = '';
+    for (const t of order) {
+      if (!caps[t]) continue;
+      const sym = CHESS_UNICODE[color + t] || t;
+      total += sym.repeat(caps[t]);
+    }
+    if (total) el.textContent = total;
+  };
+
+  renderCaps($('chess-captured-by-me'),  capturedByMe,  oppColor);
+  renderCaps($('chess-captured-by-opp'), capturedByOpp, myColor);
+}
+
+function chessUpdateTurnIndicator() {
+  const engine  = Chess.engine;
+  const myColor = Chess.myColor;
+  const mode    = Chess.gameMode;
+  const isWhite = engine.current === 'w';
+  let text;
+  if (mode === 'local') {
+    text = `Lượt: ${isWhite ? 'Trắng ♔' : 'Đen ♚'}`;
+  } else if (engine.current === myColor) {
+    text = 'Lượt của bạn';
+  } else {
+    text = mode.startsWith('bot') ? 'Bot đang suy nghĩ...' : 'Đợi đối thủ...';
+  }
+  $('chess-turn-text').textContent = text;
+}
+
+/* ════════════════════════════════════════════════
+   CHESS TIMER
+═══════════════════════════════════════════════ */
+function startChessTimer() {
+  stopChessTimer();
+  Chess.timerInterval = setInterval(() => {
+    const engine = Chess.engine;
+    if (!engine || engine.gameOver) { stopChessTimer(); return; }
+    const cur = engine.current;
+    Chess.timers[cur] = Math.max(0, Chess.timers[cur] - 1);
+    chessUpdateTimerDisplay();
+    if (Chess.timers[cur] <= 0) {
+      stopChessTimer();
+      const winner = cur === 'w' ? 'b' : 'w';
+      toast(`Hết giờ! ${cur === 'w' ? 'Trắng' : 'Đen'} thua`, 'error');
+      showChessResult({ type: 'timeout', winner });
+    }
+  }, 1000);
+}
+
+function stopChessTimer() {
+  clearInterval(Chess.timerInterval);
+  Chess.timerInterval = null;
+}
+
+function chessUpdateTimerDisplay() {
+  const myColor  = Chess.myColor;
+  const oppColor = myColor === 'w' ? 'b' : 'w';
+  const myT  = Chess.timers[myColor];
+  const oppT = Chess.timers[oppColor];
+
+  if (Chess.timeControl === 0) {
+    $('chess-timer-self-val').textContent = '∞';
+    $('chess-timer-opp-val').textContent  = '∞';
+    return;
+  }
+  $('chess-timer-self-val').textContent = formatTime(myT);
+  $('chess-timer-opp-val').textContent  = formatTime(oppT);
+
+  const isMyTurn = Chess.engine && Chess.engine.current === myColor;
+  $('chess-timer-self').classList.toggle('active', isMyTurn);
+  $('chess-timer-self').classList.toggle('low', myT > 0 && myT <= 30);
+  $('chess-timer-opp').classList.toggle('active', !isMyTurn);
+  $('chess-timer-opp').classList.toggle('low', oppT > 0 && oppT <= 30);
+}
+
+/* ════════════════════════════════════════════════
+   CHESS GAME END
+═══════════════════════════════════════════════ */
+function endChessGame() {
+  stopChessTimer();
+  Chess.board?.setDisabled(true);
+  const engine = Chess.engine;
+
+  let type, winner;
+  if (engine.result === 'draw') { type = 'draw'; winner = null; }
+  else { type = engine.inCheck ? 'checkmate' : 'stalemate'; winner = engine.result; }
+
+  if (!State.isGuest && type === 'checkmate') {
+    const won = winner === Chess.myColor;
+    State.stats.games++;
+    if (won) { State.stats.wins++; State.stats.elo += 20; }
+    else     { State.stats.losses++; State.stats.elo = Math.max(100, State.stats.elo - 15); }
+    if (State.user) firebaseService.updateUserStats(State.user.uid, State.stats);
+    updateStats();
+  }
+  showChessResult({ type, winner });
+}
+
+function showChessResult({ type, winner }) {
+  let title, banner;
+  if (type === 'checkmate') {
+    const isWin = winner === Chess.myColor;
+    title  = isWin ? '🎉 Bạn thắng!' : 'Bạn thua!';
+    banner = `${winner === 'w' ? 'Trắng ♔' : 'Đen ♚'} thắng bằng chiếu hết`;
+  } else if (type === 'stalemate') {
+    title = 'Hòa!'; banner = 'Pat – không còn nước đi hợp lệ';
+  } else if (type === 'draw') {
+    title = 'Hòa!'; banner = '50 nước không ăn quân – Hòa';
+  } else if (type === 'timeout') {
+    const isWin = winner === Chess.myColor;
+    title  = isWin ? '🎉 Bạn thắng!' : 'Bạn thua!';
+    banner = `${winner === 'w' ? 'Trắng ♔' : 'Đen ♚'} thắng do hết giờ`;
+  } else if (type === 'resign') {
+    const isWin = winner === Chess.myColor;
+    title  = isWin ? '🎉 Bạn thắng!' : 'Bạn đầu hàng';
+    banner = `${winner === 'w' ? 'Trắng ♔' : 'Đen ♚'} thắng do đầu hàng`;
+  }
+  $('chess-result-title').textContent  = title;
+  $('chess-winner-banner').textContent = banner;
+  $('chess-result-overlay').classList.remove('hidden');
+}
+
+/* ════════════════════════════════════════════════
    SPECTATE MODE
 ═══════════════════════════════════════════════ */
 const Spectate = {
@@ -1482,6 +1867,8 @@ async function init() {
   bindEvents();
   bindUserMenu();
   initSetup();
+
+  initChessSetup();
 
   const fbReady = await firebaseService.init();
   if (fbReady) {
