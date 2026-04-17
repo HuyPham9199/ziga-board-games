@@ -1005,6 +1005,13 @@ function bindEvents() {
     showView('view-lobby');
   });
 
+  $('btn-chess-flip').addEventListener('click', () => {
+    if (Chess.board) {
+      Chess.board.setFlipped(!Chess.board.flipped);
+      toast('Đã lật bàn cờ', 'info', 1200);
+    }
+  });
+
   $('btn-chess-resign').addEventListener('click', async () => {
     try {
       await showConfirm({ icon: '🏳', title: 'Đầu hàng?', msg: 'Bạn có chắc muốn đầu hàng không?', okText: 'Đầu hàng', danger: true });
@@ -1531,7 +1538,8 @@ function onChessPlayerMove(from, to, promoTo) {
   const result = engine.move(from, to, promoTo || 'Q');
   if (!result) return;
 
-  Chess.board.applyMove(from, to);
+  const snd = engine.inCheck ? 'check' : result.captured ? 'capture' : 'move';
+  Chess.board.applyMove(from, to, snd);
   Chess.board.setEngine(engine);
   afterChessMove(result);
 
@@ -1576,7 +1584,8 @@ async function doChessBotMove() {
   const result = engine.move(move.from, move.to, move.promo || 'Q');
   if (!result) return;
 
-  Chess.board.applyMove(move.from, move.to);
+  const snd2 = engine.inCheck ? 'check' : result.captured ? 'capture' : 'move';
+  Chess.board.applyMove(move.from, move.to, snd2);
   Chess.board.setEngine(engine);
   afterChessMove(result);
 
