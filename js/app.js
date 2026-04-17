@@ -62,6 +62,10 @@ const State = {
   timers:      { [BLACK]: 600, [WHITE]: 600 },
   timerInterval: null,
 
+  // Matchmaking
+  mmPollInterval: null,
+  mmUnsub:        null,
+
   // Presence & Invite
   presenceUnsub:  null,
   inviteUnsub:    null,
@@ -478,15 +482,8 @@ async function startGame() {
   State.board.resize();
   const myName  = State.user?.displayName || 'Bạn';
   const oppName = mode.startsWith('bot') ? ({ 'bot-easy':'Bot Dễ', 'bot-medium':'Bot Thường', 'bot-hard':'Bot Khó' }[mode]||'Bot') : (mode==='local'?'Người chơi 2':'Đối thủ');
-  startPresence('in-game', {
-    game: 'go', boardSize: State.boardSize,
-    blackName: myColor === BLACK ? myName : oppName,
-    whiteName: myColor === WHITE ? myName : oppName,
-    blackElo: myColor === BLACK ? State.stats.elo : 1200,
-    whiteElo:  myColor === WHITE ? State.stats.elo : 1200,
-  });
-
   if (mode === 'online') {
+    startPresence('looking', { game: 'go', boardSize: State.boardSize });
     await startOnlineGame();
   } else if (mode === 'local') {
     // 2-player local: both sides allowed
@@ -548,6 +545,12 @@ function setupGameUI() {
 /* ════════════════════════════════════════════════
    ONLINE GAME
 ═══════════════════════════════════════════════ */
+function stopMatchmaking() {
+  clearInterval(State.mmPollInterval);
+  State.mmPollInterval = null;
+  if (State.mmUnsub) { State.mmUnsub(); State.mmUnsub = null; }
+}
+
 async function startOnlineGame() {
   if (!firebaseService._ready || !State.user) {
     toast('Cần đăng nhập và cấu hình Firebase để chơi online', 'error');
@@ -561,44 +564,50 @@ async function startOnlineGame() {
   await firebaseService.joinQueue(uid, name, State.boardSize, State.stats.elo, 'go');
 
   let matched = false;
-  let pollInterval = null;
-  let mmUnsub = null;
+  stopMatchmaking(); // clear any stale matchmaking
 
   // Passive: someone else found me and wrote my gameId
   const myRef = firebaseService.db.collection('matchmaking').doc(uid);
-  mmUnsub = myRef.onSnapshot(async doc => {
+  State.mmUnsub = myRef.onSnapshot(async doc => {
     if (matched) return;
     const data = doc.data();
     if (data && data.gameId) {
       matched = true;
-      clearInterval(pollInterval);
-      mmUnsub?.();
+      stopMatchmaking();
       await firebaseService.leaveQueue(uid);
-      State.gameId = data.gameId;
+      State.gameId  = data.gameId;
       State.myColor = WHITE;
       State.board.setMyColor(WHITE);
       State.board.setDisabled(true);
-      $('info-mode').textContent = 'Online';
+      const oppName = data.oppName || 'Đối thủ';
+      $('opp-name').textContent   = oppName;
+      $('opp-avatar').textContent = oppName[0].toUpperCase();
+      $('opp-rating').textContent = `ELO ${data.oppElo || 1200}`;
+      $('info-mode').textContent  = 'Online';
       hideMatchmakingModal();
-      toast('Đã kết nối với đối thủ!', 'success');
+      toast(`Đã kết nối với ${oppName}!`, 'success');
+      startPresence('in-game', { game: 'go', boardSize: State.boardSize, vsName: oppName });
       startOnlineListener();
       startTimer();
     }
   });
 
   // Active: I search for opponent
-  pollInterval = setInterval(async () => {
-    if (matched) { clearInterval(pollInterval); return; }
+  State.mmPollInterval = setInterval(async () => {
+    if (matched) { stopMatchmaking(); return; }
     const opp = await firebaseService.findOpponent(uid, State.boardSize, 'go');
     if (opp) {
       matched = true;
-      clearInterval(pollInterval);
-      mmUnsub?.();
+      stopMatchmaking();
       const gameId = await firebaseService.createGame(uid, opp.userId, State.boardSize);
-      // Write gameId to opponent's doc so their passive listener fires
-      try { await firebaseService.db.collection('matchmaking').doc(opp.userId).update({ gameId }); } catch(e) {}
-      await firebaseService.leaveQueue(uid); // only remove own entry
-      State.gameId = gameId;
+      // Notify opponent: write gameId + my info so they can show my name
+      try {
+        await firebaseService.db.collection('matchmaking').doc(opp.userId).update({
+          gameId, oppName: name, oppElo: State.stats.elo,
+        });
+      } catch(e) {}
+      await firebaseService.leaveQueue(uid);
+      State.gameId  = gameId;
       State.myColor = BLACK;
       State.board.setMyColor(BLACK);
       State.board.setDisabled(false);
@@ -608,6 +617,7 @@ async function startOnlineGame() {
       $('info-mode').textContent  = 'Online';
       hideMatchmakingModal();
       toast(`Tìm được đối thủ: ${opp.displayName}!`, 'success');
+      startPresence('in-game', { game: 'go', boardSize: State.boardSize, vsName: opp.displayName });
       startOnlineListener();
       startTimer();
     }
@@ -654,43 +664,45 @@ async function startChessOnlineGame() {
   await firebaseService.joinQueue(uid, name, 8, State.stats.elo, 'chess');
 
   let matched = false;
-  let pollInterval = null;
-  let mmUnsub = null;
+  stopMatchmaking();
 
   const myRef = firebaseService.db.collection('matchmaking').doc(uid);
-  mmUnsub = myRef.onSnapshot(async doc => {
+  State.mmUnsub = myRef.onSnapshot(async doc => {
     if (matched) return;
     const data = doc.data();
     if (data && data.gameId) {
       matched = true;
-      clearInterval(pollInterval);
-      mmUnsub?.();
+      stopMatchmaking();
       await firebaseService.leaveQueue(uid);
       hideMatchmakingModal();
-      toast('Đã kết nối với đối thủ!', 'success');
-      startChessOnlineGameWithId(data.gameId, 'b'); // passive = black
+      const oppName = data.oppName || 'Đối thủ';
+      toast(`Đã kết nối với ${oppName}!`, 'success');
+      startChessOnlineGameWithId(data.gameId, 'b', oppName, data.oppElo);
     }
   });
 
-  pollInterval = setInterval(async () => {
-    if (matched) { clearInterval(pollInterval); return; }
+  State.mmPollInterval = setInterval(async () => {
+    if (matched) { stopMatchmaking(); return; }
     const opp = await firebaseService.findOpponent(uid, 8, 'chess');
     if (opp) {
       matched = true;
-      clearInterval(pollInterval);
-      mmUnsub?.();
-      const gameId = await firebaseService.createChessGame(uid, opp.userId); // uid = white
-      try { await firebaseService.db.collection('matchmaking').doc(opp.userId).update({ gameId }); } catch(e) {}
+      stopMatchmaking();
+      const gameId = await firebaseService.createChessGame(uid, opp.userId);
+      try {
+        await firebaseService.db.collection('matchmaking').doc(opp.userId).update({
+          gameId, oppName: name, oppElo: State.stats.elo,
+        });
+      } catch(e) {}
       await firebaseService.leaveQueue(uid);
       hideMatchmakingModal();
       toast(`Tìm được đối thủ: ${opp.displayName}!`, 'success');
-      startChessOnlineGameWithId(gameId, 'w'); // active = white
+      startChessOnlineGameWithId(gameId, 'w', opp.displayName, opp.elo);
     }
     $('mm-status').textContent = `Đang chờ... ${Math.floor(Math.random()*5)+1} người trong hàng`;
   }, 2500);
 }
 
-function startChessOnlineGameWithId(gameId, myColor) {
+function startChessOnlineGameWithId(gameId, myColor, oppDisplayName = 'Đối thủ', oppElo = 1200) {
   Chess.gameId   = gameId;
   Chess.myColor  = myColor;
   Chess.gameMode = 'online';
@@ -705,9 +717,9 @@ function startChessOnlineGameWithId(gameId, myColor) {
   $('chess-self-name').textContent    = myName;
   $('chess-self-rating').textContent  = `ELO ${State.stats.elo}`;
   $('chess-self-stone').textContent   = selfStone;
-  $('chess-opp-avatar').textContent   = '?';
-  $('chess-opp-name').textContent     = 'Đối thủ';
-  $('chess-opp-rating').textContent   = 'ELO ?';
+  $('chess-opp-avatar').textContent   = oppDisplayName[0].toUpperCase();
+  $('chess-opp-name').textContent     = oppDisplayName;
+  $('chess-opp-rating').textContent   = `ELO ${oppElo}`;
   $('chess-opp-stone').textContent    = oppStone;
   $('chess-info-mode').textContent    = 'Online';
   $('chess-info-move').textContent    = 0;
@@ -1288,6 +1300,7 @@ function bindEvents() {
 
   // Matchmaking cancel
   $('btn-cancel-mm').addEventListener('click', async () => {
+    stopMatchmaking();
     if (State.user) await firebaseService.leaveQueue(State.user.uid);
     hideMatchmakingModal();
     showView('view-setup');

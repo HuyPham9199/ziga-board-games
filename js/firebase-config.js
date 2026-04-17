@@ -113,13 +113,16 @@ class FirebaseService {
 
   async findOpponent(userId, boardSize, game = 'go') {
     if (!this._ready) return null;
+    // Single-field query avoids composite index requirement; filter client-side
     const snap = await this.db.collection('matchmaking')
       .where('status', '==', 'waiting')
-      .where('boardSize', '==', boardSize)
-      .where('game', '==', game)
-      .limit(5)
+      .limit(50)
       .get();
-    const others = snap.docs.filter(d => d.id !== userId);
+    const others = snap.docs.filter(d => {
+      if (d.id === userId) return false;
+      const data = d.data();
+      return data.boardSize === boardSize && (data.game || 'go') === game;
+    });
     return others.length ? others[0].data() : null;
   }
 
