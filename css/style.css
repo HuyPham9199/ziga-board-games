@@ -689,15 +689,20 @@ a { color: var(--accent); text-decoration: none; }
 .pr-game-info { font-size: 10px; color: var(--text3); }
 
 .pr-actions { display: flex; gap: 5px; flex-shrink: 0; }
-.btn-invite {
-  padding: 6px 10px; font-size: 11px; font-weight: 600;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
+.btn-invite, .btn-invite-go, .btn-invite-chess {
+  padding: 5px 8px; font-size: 11px; font-weight: 600;
   border: none; border-radius: var(--radius-sm); color: #fff;
   cursor: pointer; transition: opacity .15s, transform .15s;
   white-space: nowrap;
 }
-.btn-invite:hover { opacity: .85; transform: scale(1.04); }
-.btn-invite:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn-invite, .btn-invite-go {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+}
+.btn-invite-chess {
+  background: linear-gradient(135deg, #7c5cbf, #a064e0);
+}
+.btn-invite:hover, .btn-invite-go:hover, .btn-invite-chess:hover { opacity: .85; transform: scale(1.04); }
+.btn-invite:disabled, .btn-invite-go:disabled, .btn-invite-chess:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .btn-spectate {
   padding: 6px 10px; font-size: 11px; font-weight: 600;
   background: var(--glass2); border: 1px solid var(--glass-bd);

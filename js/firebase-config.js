@@ -95,11 +95,11 @@ class FirebaseService {
   }
 
   /* ── Matchmaking ──────────────────────────────── */
-  async joinQueue(userId, displayName, boardSize, elo = 1200) {
+  async joinQueue(userId, displayName, boardSize, elo = 1200, game = 'go') {
     if (!this._ready) return null;
     const ref = this.db.collection('matchmaking').doc(userId);
     await ref.set({
-      userId, displayName, boardSize, elo,
+      userId, displayName, boardSize, elo, game,
       status: 'waiting',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -111,11 +111,12 @@ class FirebaseService {
     await this.db.collection('matchmaking').doc(userId).delete();
   }
 
-  async findOpponent(userId, boardSize) {
+  async findOpponent(userId, boardSize, game = 'go') {
     if (!this._ready) return null;
     const snap = await this.db.collection('matchmaking')
       .where('status', '==', 'waiting')
       .where('boardSize', '==', boardSize)
+      .where('game', '==', game)
       .limit(5)
       .get();
     const others = snap.docs.filter(d => d.id !== userId);
@@ -159,6 +160,59 @@ class FirebaseService {
     if (!this._ready) return;
     await this.db.collection('games').doc(gameId).update({
       status: 'finished',
+      result,
+      finishedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  /* ── Chess Online ─────────────────────────────── */
+  async createChessGame(whiteId, blackId) {
+    if (!this._ready) return null;
+    const ref = this.db.collection('chess-games').doc();
+    await ref.set({
+      whiteId, blackId,
+      board: [
+        ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+        ['bP','bP','bP','bP','bP','bP','bP','bP'],
+        [null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null],
+        ['wP','wP','wP','wP','wP','wP','wP','wP'],
+        ['wR','wN','wB','wQ','wK','wB','wN','wR'],
+      ],
+      current: 'w',
+      castling: { wK: true, wQ: true, bK: true, bQ: true },
+      enPassant: null,
+      halfMoves: 0,
+      fullMoves: 1,
+      gameOver: false,
+      result: null,
+      status: 'playing',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return ref.id;
+  }
+
+  listenChessGame(gameId, callback) {
+    if (!this._ready) return () => {};
+    return this.db.collection('chess-games').doc(gameId)
+      .onSnapshot(doc => callback(doc.data()));
+  }
+
+  async pushChessMove(gameId, engineJSON) {
+    if (!this._ready) return;
+    await this.db.collection('chess-games').doc(gameId).update({
+      ...engineJSON,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  async endChessGame(gameId, result) {
+    if (!this._ready) return;
+    await this.db.collection('chess-games').doc(gameId).update({
+      status: 'finished',
+      gameOver: true,
       result,
       finishedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -268,9 +322,11 @@ class FirebaseService {
     return ref.id;
   }
 
-  async respondInvite(inviteId, status) {
+  async respondInvite(inviteId, status, gameId = null) {
     if (!this._ready) return;
-    await this.db.collection('invites').doc(inviteId).update({ status });
+    const update = { status };
+    if (gameId) update.gameId = gameId;
+    await this.db.collection('invites').doc(inviteId).update(update);
   }
 
   listenIncomingInvites(userId, callback) {

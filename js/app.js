@@ -217,7 +217,7 @@ function stopPresence() {
 /* ════════════════════════════════════════════════
    SEND INVITE
 ═══════════════════════════════════════════════ */
-async function sendInviteTo(target) {
+async function sendInviteTo(target, gameType = 'go') {
   if (!firebaseService._ready || !State.user) {
     toast('Cần đăng nhập Firebase để mời', 'error'); return;
   }
@@ -234,18 +234,20 @@ async function sendInviteTo(target) {
 
   try {
     const inviteId = await firebaseService.sendInvite(from, target.id, {
-      game: 'go', boardSize: State.boardSize
+      game: gameType,
+      boardSize: gameType === 'chess' ? 8 : State.boardSize
     });
     State.pendingInviteId = inviteId;
-    showInviteSentModal(target.displayName);
-    listenInviteResponse(inviteId);
+    showInviteSentModal(target.displayName, gameType);
+    listenInviteResponse(inviteId, gameType);
   } catch (e) {
     toast('Không gửi được lời mời: ' + e.message, 'error');
   }
 }
 
-function showInviteSentModal(toName) {
-  $('invite-sent-to').textContent = `Đã mời ${toName} vào ván Cờ Vây ${State.boardSize}×${State.boardSize}`;
+function showInviteSentModal(toName, gameType = 'go') {
+  const gameLabel = gameType === 'chess' ? 'Cờ Vua ♔' : `Cờ Vây ${State.boardSize}×${State.boardSize}`;
+  $('invite-sent-to').textContent = `Đã mời ${toName} vào ván ${gameLabel}`;
   $('modal-invite-sent').classList.remove('hidden');
 }
 
@@ -253,24 +255,27 @@ function hideInviteSentModal() {
   $('modal-invite-sent').classList.add('hidden');
 }
 
-function listenInviteResponse(inviteId) {
+function listenInviteResponse(inviteId, gameType = 'go') {
   if (State.inviteRespUnsub) State.inviteRespUnsub();
   State.inviteRespUnsub = firebaseService.listenInviteResponse(inviteId, async data => {
     if (!data || data.status === 'pending') return;
+    // Wait until invitee writes gameId before proceeding
+    if (data.status === 'accepted' && !data.gameId) return;
+
     State.inviteRespUnsub?.();
-    State.inviteRespUnsub  = null;
-    State.pendingInviteId  = null;
+    State.inviteRespUnsub = null;
+    State.pendingInviteId = null;
     hideInviteSentModal();
 
     if (data.status === 'accepted') {
       toast('Đối thủ đồng ý! Đang bắt đầu ván đấu...', 'success');
-      // Create game: I am black (inviter), they are white
-      const gameId = await firebaseService.createGame(
-        State.user.uid, data.toUserId || data.from?.userId, State.boardSize
-      );
-      // Actually invitee is "to", so create game: inviter=black, invitee=white
+      const gameId = data.gameId;
       await firebaseService.deleteInvite(inviteId);
-      startOnlineGameWithId(gameId, BLACK);
+      if (gameType === 'chess') {
+        startChessOnlineGameWithId(gameId, 'w'); // inviter = white (first mover)
+      } else {
+        startOnlineGameWithId(gameId, BLACK);    // inviter = black (first mover)
+      }
     } else {
       toast('Đối thủ từ chối lời mời', 'info');
       firebaseService.deleteInvite(inviteId);
@@ -297,7 +302,9 @@ function showIncomingInvite(invite) {
   $('invite-from-avatar').textContent = invite.from.avatar || '?';
   $('invite-from-name').textContent   = invite.from.displayName || 'Ai đó';
   $('invite-from-elo').textContent    = `ELO ${invite.from.elo || 1200}`;
-  $('invite-game-label').textContent  = `Cờ Vây ${invite.boardSize || 19}×${invite.boardSize || 19}`;
+  $('invite-game-label').textContent  = invite.game === 'chess'
+    ? 'Cờ Vua ♔'
+    : `Cờ Vây ${invite.boardSize || 19}×${invite.boardSize || 19}`;
   $('modal-invite').classList.remove('hidden');
 
   // Countdown 30s
@@ -325,15 +332,27 @@ async function acceptInvite() {
   $('modal-invite').classList.add('hidden');
   State.incomingInvite = null;
 
-  await firebaseService.respondInvite(invite.id, 'accepted');
+  const gameType = invite.game || 'go';
+  let gameId;
+
+  if (gameType === 'chess') {
+    // inviter = white (first mover), me = black
+    gameId = await firebaseService.createChessGame(invite.from.userId, State.user.uid);
+  } else {
+    // inviter = black (first mover), me = white
+    gameId = await firebaseService.createGame(invite.from.userId, State.user.uid, invite.boardSize || 19);
+  }
+
+  // Write accepted + gameId so inviter can join the same game (inviter deletes invite)
+  await firebaseService.respondInvite(invite.id, 'accepted', gameId);
   toast('Đã đồng ý! Đang bắt đầu ván đấu...', 'success');
 
-  // Create game: inviter=black, me=white
-  const gameId = await firebaseService.createGame(
-    invite.from.userId, State.user.uid, invite.boardSize || 19
-  );
-  await firebaseService.deleteInvite(invite.id);
-  startOnlineGameWithId(gameId, WHITE);
+  if (gameType === 'chess') {
+    startChessOnlineGameWithId(gameId, 'b');
+  } else {
+    State.boardSize = invite.boardSize || 19; // sync board size from invite
+    startOnlineGameWithId(gameId, WHITE);
+  }
 }
 
 async function declineInvite() {
@@ -539,17 +558,46 @@ async function startOnlineGame() {
   const uid  = State.user.uid;
   const name = State.user.displayName || 'Khách';
 
-  await firebaseService.joinQueue(uid, name, State.boardSize, State.stats.elo);
+  await firebaseService.joinQueue(uid, name, State.boardSize, State.stats.elo, 'go');
 
-  // Poll for opponent
-  const pollInterval = setInterval(async () => {
-    const opp = await firebaseService.findOpponent(uid, State.boardSize);
-    if (opp) {
+  let matched = false;
+  let pollInterval = null;
+  let mmUnsub = null;
+
+  // Passive: someone else found me and wrote my gameId
+  const myRef = firebaseService.db.collection('matchmaking').doc(uid);
+  mmUnsub = myRef.onSnapshot(async doc => {
+    if (matched) return;
+    const data = doc.data();
+    if (data && data.gameId) {
+      matched = true;
       clearInterval(pollInterval);
-      // I found someone: I am black
-      const gameId = await firebaseService.createGame(uid, opp.userId, State.boardSize);
+      mmUnsub?.();
       await firebaseService.leaveQueue(uid);
-      await firebaseService.leaveQueue(opp.userId);
+      State.gameId = data.gameId;
+      State.myColor = WHITE;
+      State.board.setMyColor(WHITE);
+      State.board.setDisabled(true);
+      $('info-mode').textContent = 'Online';
+      hideMatchmakingModal();
+      toast('Đã kết nối với đối thủ!', 'success');
+      startOnlineListener();
+      startTimer();
+    }
+  });
+
+  // Active: I search for opponent
+  pollInterval = setInterval(async () => {
+    if (matched) { clearInterval(pollInterval); return; }
+    const opp = await firebaseService.findOpponent(uid, State.boardSize, 'go');
+    if (opp) {
+      matched = true;
+      clearInterval(pollInterval);
+      mmUnsub?.();
+      const gameId = await firebaseService.createGame(uid, opp.userId, State.boardSize);
+      // Write gameId to opponent's doc so their passive listener fires
+      try { await firebaseService.db.collection('matchmaking').doc(opp.userId).update({ gameId }); } catch(e) {}
+      await firebaseService.leaveQueue(uid); // only remove own entry
       State.gameId = gameId;
       State.myColor = BLACK;
       State.board.setMyColor(BLACK);
@@ -565,25 +613,6 @@ async function startOnlineGame() {
     }
     $('mm-status').textContent = `Đang chờ... ${Math.floor(Math.random()*5)+1} người trong hàng`;
   }, 2500);
-
-  // If I'm being matched by someone else
-  const myRef = firebaseService.db.collection('matchmaking').doc(uid);
-  const unsub = myRef.onSnapshot(async doc => {
-    const data = doc.data();
-    if (data && data.gameId) {
-      clearInterval(pollInterval);
-      unsub();
-      State.gameId = data.gameId;
-      State.myColor = WHITE;
-      State.board.setMyColor(WHITE);
-      State.board.setDisabled(true); // black goes first
-      $('info-mode').textContent = 'Online';
-      hideMatchmakingModal();
-      toast('Đã kết nối với đối thủ!', 'success');
-      startOnlineListener();
-      startTimer();
-    }
-  });
 }
 
 function startOnlineListener() {
@@ -606,6 +635,128 @@ function startOnlineListener() {
   State.chatUnsub = firebaseService.listenChat(State.gameId, msg => {
     const isSelf = msg.userId === State.user?.uid;
     addChatMessage(`${msg.name}: ${msg.text}`, isSelf ? 'self' : 'opp');
+  });
+}
+
+/* ════════════════════════════════════════════════
+   CHESS ONLINE MATCHMAKING
+═══════════════════════════════════════════════ */
+async function startChessOnlineGame() {
+  if (!firebaseService._ready || !State.user) {
+    toast('Cần đăng nhập và cấu hình Firebase để chơi online', 'error');
+    showView('view-chess-setup');
+    return;
+  }
+  showMatchmakingModal();
+  const uid  = State.user.uid;
+  const name = State.user.displayName || 'Khách';
+
+  await firebaseService.joinQueue(uid, name, 8, State.stats.elo, 'chess');
+
+  let matched = false;
+  let pollInterval = null;
+  let mmUnsub = null;
+
+  const myRef = firebaseService.db.collection('matchmaking').doc(uid);
+  mmUnsub = myRef.onSnapshot(async doc => {
+    if (matched) return;
+    const data = doc.data();
+    if (data && data.gameId) {
+      matched = true;
+      clearInterval(pollInterval);
+      mmUnsub?.();
+      await firebaseService.leaveQueue(uid);
+      hideMatchmakingModal();
+      toast('Đã kết nối với đối thủ!', 'success');
+      startChessOnlineGameWithId(data.gameId, 'b'); // passive = black
+    }
+  });
+
+  pollInterval = setInterval(async () => {
+    if (matched) { clearInterval(pollInterval); return; }
+    const opp = await firebaseService.findOpponent(uid, 8, 'chess');
+    if (opp) {
+      matched = true;
+      clearInterval(pollInterval);
+      mmUnsub?.();
+      const gameId = await firebaseService.createChessGame(uid, opp.userId); // uid = white
+      try { await firebaseService.db.collection('matchmaking').doc(opp.userId).update({ gameId }); } catch(e) {}
+      await firebaseService.leaveQueue(uid);
+      hideMatchmakingModal();
+      toast(`Tìm được đối thủ: ${opp.displayName}!`, 'success');
+      startChessOnlineGameWithId(gameId, 'w'); // active = white
+    }
+    $('mm-status').textContent = `Đang chờ... ${Math.floor(Math.random()*5)+1} người trong hàng`;
+  }, 2500);
+}
+
+function startChessOnlineGameWithId(gameId, myColor) {
+  Chess.gameId   = gameId;
+  Chess.myColor  = myColor;
+  Chess.gameMode = 'online';
+  Chess.engine   = new ChessEngine();
+  Chess.pendingPromo = null;
+
+  const myName   = State.user?.displayName || 'Bạn';
+  const selfStone = myColor === 'w' ? '♔' : '♚';
+  const oppStone  = myColor === 'w' ? '♚' : '♔';
+
+  $('chess-self-avatar').textContent  = myName[0].toUpperCase();
+  $('chess-self-name').textContent    = myName;
+  $('chess-self-rating').textContent  = `ELO ${State.stats.elo}`;
+  $('chess-self-stone').textContent   = selfStone;
+  $('chess-opp-avatar').textContent   = '?';
+  $('chess-opp-name').textContent     = 'Đối thủ';
+  $('chess-opp-rating').textContent   = 'ELO ?';
+  $('chess-opp-stone').textContent    = oppStone;
+  $('chess-info-mode').textContent    = 'Online';
+  $('chess-info-move').textContent    = 0;
+  $('chess-move-num').textContent     = 0;
+  $('chess-move-list').innerHTML      = '';
+  $('chess-result-overlay').classList.add('hidden');
+  $('chess-check-badge').classList.add('hidden');
+  $('chess-captured-by-me').innerHTML  = '';
+  $('chess-captured-by-opp').innerHTML = '';
+
+  const t = Chess.timeControl > 0 ? Chess.timeControl : 0;
+  Chess.timers = { w: t, b: t };
+  chessUpdateTimerDisplay();
+
+  showView('view-chess-game');
+
+  setTimeout(() => {
+    Chess.board = new ChessBoard('chess-board', (from, to, promoTo) => {
+      onChessPlayerMove(from, to, promoTo);
+    });
+    Chess.board.setEngine(Chess.engine);
+    Chess.board.setFlipped(myColor === 'b');
+    Chess.board.setDisabled(myColor !== 'w'); // white goes first
+    Chess.board.resize();
+
+    startPresence('in-game', { game: 'chess', boardSize: 8 });
+    startChessOnlineListener();
+    if (Chess.timeControl > 0) startChessTimer();
+  }, 80);
+}
+
+function startChessOnlineListener() {
+  if (Chess.gameUnsub) Chess.gameUnsub();
+  Chess.gameUnsub = firebaseService.listenChessGame(Chess.gameId, data => {
+    if (!data) return;
+    Chess.engine.fromJSON(data);
+    if (Chess.board) {
+      Chess.board.setEngine(Chess.engine);
+      Chess.board.reset();
+    }
+    const isMyTurn = Chess.engine.current === Chess.myColor;
+    Chess.board?.setDisabled(!isMyTurn || Chess.engine.gameOver);
+    chessUpdateTurnIndicator();
+    updateChessCaptured();
+    chessUpdateTimerDisplay();
+    if ((data.status === 'finished' || Chess.engine.gameOver) && !Chess.engine._endShown) {
+      Chess.engine._endShown = true;
+      endChessGame();
+    }
   });
 }
 
@@ -1348,7 +1499,7 @@ function buildPlayerRow(p, myId) {
   const inGame    = p.status === 'in-game';
 
   const statusLabels = { online: 'Online', looking: 'Tìm trận', 'in-game': 'Đang chơi' };
-  const gameText = p.game === 'go' ? `⬛⬜ Cờ Vây ${p.boardSize || 19}×${p.boardSize || 19}` : '';
+  const gameText = p.game === 'chess' ? '♟ Cờ Vua' : p.game === 'go' ? `⬛⬜ Cờ Vây ${p.boardSize || 19}×${p.boardSize || 19}` : '';
 
   const row = document.createElement('div');
   row.className = `player-row${isMe ? ' is-me' : ''}`;
@@ -1360,7 +1511,7 @@ function buildPlayerRow(p, myId) {
 
   let actionBtn = '';
   if (canInvite) {
-    actionBtn = `<button class="btn-invite" data-uid="${p.id}">Mời</button>`;
+    actionBtn = `<button class="btn-invite-go" data-uid="${p.id}" title="Mời chơi Cờ Vây">⬛ Cờ Vây</button><button class="btn-invite-chess" data-uid="${p.id}" title="Mời chơi Cờ Vua">♔ Cờ Vua</button>`;
   } else if (inGame && p.gameId) {
     actionBtn = `<button class="btn-spectate" data-gameid="${p.gameId}" data-bname="${escHtml(p.blackName||'Đen')}" data-wname="${escHtml(p.whiteName||'Trắng')}" data-belo="${p.blackElo||1200}" data-welo="${p.whiteElo||1200}" data-size="${p.boardSize||19}">👁 Xem</button>`;
   }
@@ -1381,9 +1532,9 @@ function buildPlayerRow(p, myId) {
     <div class="pr-actions">${actionBtn}</div>`;
 
   // Bind action
-  const invBtn  = row.querySelector('.btn-invite');
+  row.querySelector('.btn-invite-go')?.addEventListener('click',    () => sendInviteTo(p, 'go'));
+  row.querySelector('.btn-invite-chess')?.addEventListener('click', () => sendInviteTo(p, 'chess'));
   const specBtn = row.querySelector('.btn-spectate');
-  if (invBtn)  invBtn.addEventListener('click',  () => sendInviteTo(p));
   if (specBtn) specBtn.addEventListener('click', () => {
     const d = specBtn.dataset;
     startSpectate(d.gameid, {
@@ -1415,6 +1566,8 @@ const Chess = {
   timers:      { w: 300, b: 300 },
   timerInterval: null,
   pendingPromo: null,    // { from, to } waiting for piece selection
+  gameId:      null,
+  gameUnsub:   null,
 };
 
 /* ════════════════════════════════════════════════
@@ -1453,6 +1606,14 @@ function initChessSetup() {
    START CHESS GAME
 ═══════════════════════════════════════════════ */
 function startChessGame() {
+  if (Chess.gameMode === 'online') {
+    // Need board view open before async matchmaking
+    Chess.engine = new ChessEngine();
+    Chess.pendingPromo = null;
+    startChessOnlineGame();
+    return;
+  }
+
   Chess.engine = new ChessEngine();
   Chess.pendingPromo = null;
 
@@ -1523,13 +1684,15 @@ function onChessPlayerMove(from, to, promoTo) {
   const engine = Chess.engine;
   const mode   = Chess.gameMode;
 
+  // Online: only move on your turn
+  if (mode === 'online' && engine.current !== Chess.myColor) return;
+
   // Check if promotion is needed
   const piece    = engine.board[from[0]][from[1]];
   const promoRow = piece && piece[0] === 'w' ? 0 : 7;
   const isPromo  = piece && piece[1] === 'P' && to[0] === promoRow;
 
   if (isPromo && !promoTo) {
-    // Show promotion picker
     Chess.pendingPromo = { from, to };
     showChessPromoModal(piece[0]);
     return;
@@ -1543,13 +1706,25 @@ function onChessPlayerMove(from, to, promoTo) {
   Chess.board.setEngine(engine);
   afterChessMove(result);
 
+  if (mode === 'online') {
+    Chess.board.setDisabled(true); // wait for opponent
+    firebaseService.pushChessMove(Chess.gameId, engine.toJSON());
+    if (engine.gameOver) {
+      let type, winner;
+      if (engine.result === 'draw') { type = 'draw'; winner = null; }
+      else { type = engine.inCheck ? 'checkmate' : 'stalemate'; winner = engine.result; }
+      firebaseService.endChessGame(Chess.gameId, { type, winner });
+      endChessGame();
+    }
+    return;
+  }
+
   if (engine.gameOver) { endChessGame(); return; }
 
   if (mode.startsWith('bot')) {
     Chess.board.setDisabled(true);
     doChessBotMove();
   } else {
-    // Local: always enabled, just update display
     Chess.board.setDisabled(false);
   }
 }
