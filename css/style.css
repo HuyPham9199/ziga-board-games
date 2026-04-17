@@ -949,6 +949,7 @@ a { color: var(--accent); text-decoration: none; }
   background: rgba(0,0,0,0.6);
   backdrop-filter: blur(4px);
 }
+.chess-promo-modal.hidden { display: none !important; }
 .chess-promo-card {
   padding: 24px 32px; text-align: center;
 }
