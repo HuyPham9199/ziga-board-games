@@ -793,18 +793,32 @@ a { color: var(--accent); text-decoration: none; }
    USER MENU DROPDOWN
 ═══════════════════════════════════════════════════════════ */
 .nav-user { position: relative; }
+
+/* ── dropdown menu ── */
 .user-menu {
-  position: absolute; top: calc(100% + 10px); right: 0;
-  min-width: 220px; padding: 12px 0;
-  border-radius: var(--radius); z-index: 200;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  /* Explicit block layout so items stack vertically */
+  display: flex;
+  flex-direction: column;
+  min-width: 230px;
+  padding: 8px 0;
+  border-radius: var(--radius);
+  z-index: 500;          /* Above everything */
   animation: fadeIn .15s ease;
   box-shadow: var(--shadow);
+  /* Prevent inheriting flex from .nav-user */
+  align-items: stretch;
 }
-.user-menu.hidden { display: none; }
+.user-menu.hidden { display: none !important; }
+
 .um-profile {
   display: flex; align-items: center; gap: 12px;
-  padding: 8px 16px 14px; border-bottom: 1px solid var(--glass-bd);
+  padding: 10px 16px 14px;
+  border-bottom: 1px solid var(--glass-bd);
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 .um-avatar {
   width: 40px; height: 40px; border-radius: 50%;
@@ -812,14 +826,20 @@ a { color: var(--accent); text-decoration: none; }
   display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0;
 }
-.um-name  { font-size: 14px; font-weight: 700; }
+.um-name  { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 .um-elo   { font-size: 12px; color: var(--accent); margin-top: 2px; }
-.um-divider { border: none; border-top: 1px solid var(--glass-bd); margin: 4px 0; }
+.um-divider { border: none; border-top: 1px solid var(--glass-bd); margin: 4px 0; flex-shrink: 0; }
+
 .um-item {
   display: flex; align-items: center; gap: 8px;
-  width: 100%; padding: 10px 16px; background: transparent; border: none;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent; border: none;
   color: var(--text); font-size: 14px; cursor: pointer; text-align: left;
-  transition: background .15s;
+  transition: background .15s; flex-shrink: 0;
+  /* Prevent inheriting flex alignment from parent */
+  align-self: stretch;
+  box-sizing: border-box;
 }
 .um-item:hover { background: var(--glass2); }
 .um-item.danger { color: var(--danger); }

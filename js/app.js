@@ -149,10 +149,15 @@ async function handleAuthReady(user) {
 }
 
 function updateNavUser() {
-  const name   = State.user ? (State.user.displayName || State.user.email) : 'Khách';
+  const name    = State.user ? (State.user.displayName || State.user.email || 'Người dùng') : 'Khách';
   const initial = name[0].toUpperCase();
+  // Topnav
   $('nav-avatar').textContent   = initial;
   $('nav-username').textContent = name;
+  // User menu profile
+  if ($('um-avatar')) $('um-avatar').textContent = initial;
+  if ($('um-name'))   $('um-name').textContent   = name;
+  if ($('um-elo'))    $('um-elo').textContent     = State.stats.elo;
   updateStats();
 }
 
@@ -161,18 +166,20 @@ function updateStats() {
   $('stat-losses').textContent = State.stats.losses;
   $('stat-games').textContent  = State.stats.games;
   $('stat-elo').textContent    = State.stats.elo;
+  // Sync ELO in user menu too
+  if ($('um-elo')) $('um-elo').textContent = State.stats.elo;
 }
 
 /* ════════════════════════════════════════════════
    LOBBY
 ═══════════════════════════════════════════════ */
 function initLobby() {
-  // Simulate online count badge on game card
-  setInterval(() => {
-    const count = Math.floor(Math.random() * 40) + 12;
-    $('lobby-online-count').textContent = count;
-  }, 5000);
-  $('lobby-online-count').textContent = Math.floor(Math.random() * 40) + 12;
+  // Online count is updated by renderOnlinePanel() via real Firebase presence.
+  // Only show a placeholder when there's no Firebase connection.
+  if (!firebaseService._ready) {
+    $('lobby-online-count').textContent = '–';
+    $('online-total').textContent       = '–';
+  }
 }
 
 /* ════════════════════════════════════════════════
