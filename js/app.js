@@ -339,12 +339,20 @@ async function acceptInvite() {
   const gameType = invite.game || 'go';
   let gameId;
 
+  const myName = State.user?.displayName || 'Bạn';
+  const inviterName = invite.from.displayName || 'Đối thủ';
   if (gameType === 'chess') {
-    // inviter = white (first mover), me = black
-    gameId = await firebaseService.createChessGame(invite.from.userId, State.user.uid);
+    // inviter = white, me = black
+    gameId = await firebaseService.createChessGame(
+      invite.from.userId, State.user.uid,
+      inviterName, myName, invite.from.elo || 1200, State.stats.elo
+    );
   } else {
-    // inviter = black (first mover), me = white
-    gameId = await firebaseService.createGame(invite.from.userId, State.user.uid, invite.boardSize || 19);
+    // inviter = black, me = white
+    gameId = await firebaseService.createGame(
+      invite.from.userId, State.user.uid, invite.boardSize || 19,
+      inviterName, myName, invite.from.elo || 1200, State.stats.elo
+    );
   }
 
   // Write accepted + gameId so inviter can join the same game (inviter deletes invite)
@@ -566,46 +574,46 @@ async function startOnlineGame() {
   let matched = false;
   stopMatchmaking(); // clear any stale matchmaking
 
-  // Passive: someone else found me and wrote my gameId
-  const myRef = firebaseService.db.collection('matchmaking').doc(uid);
-  State.mmUnsub = myRef.onSnapshot(async doc => {
+  const joinedAt = Date.now();
+
+  // Passive: wait for another player to create a game where I am whiteId
+  // Uses games collection (read-only) — avoids cross-user write permission issues
+  State.mmUnsub = firebaseService.listenForMyGame(uid, 'white', 'games', async gameData => {
     if (matched) return;
-    const data = doc.data();
-    if (data && data.gameId) {
-      matched = true;
-      stopMatchmaking();
-      await firebaseService.leaveQueue(uid);
-      State.gameId  = data.gameId;
-      State.myColor = WHITE;
-      State.board.setMyColor(WHITE);
-      State.board.setDisabled(true);
-      const oppName = data.oppName || 'Đối thủ';
-      $('opp-name').textContent   = oppName;
-      $('opp-avatar').textContent = oppName[0].toUpperCase();
-      $('opp-rating').textContent = `ELO ${data.oppElo || 1200}`;
-      $('info-mode').textContent  = 'Online';
-      hideMatchmakingModal();
-      toast(`Đã kết nối với ${oppName}!`, 'success');
-      startPresence('in-game', { game: 'go', boardSize: State.boardSize, vsName: oppName });
-      startOnlineListener();
-      startTimer();
-    }
+    // Ignore old stale games (only accept games created after we joined queue)
+    const createdMs = gameData.createdAt?.toMillis?.() || 0;
+    if (createdMs > 0 && createdMs < joinedAt - 30000) return;
+    matched = true;
+    stopMatchmaking();
+    await firebaseService.leaveQueue(uid);
+    State.gameId  = gameData.id;
+    State.myColor = WHITE;
+    State.board.setMyColor(WHITE);
+    State.board.setDisabled(true);
+    const oppName = gameData.blackName || 'Đối thủ';
+    $('opp-name').textContent   = oppName;
+    $('opp-avatar').textContent = oppName[0].toUpperCase();
+    $('opp-rating').textContent = `ELO ${gameData.blackElo || 1200}`;
+    $('info-mode').textContent  = 'Online';
+    hideMatchmakingModal();
+    toast(`Đã kết nối với ${oppName}!`, 'success');
+    startPresence('in-game', { game: 'go', boardSize: State.boardSize, vsName: oppName });
+    startOnlineListener();
+    startTimer();
   });
 
-  // Active: I search for opponent
+  // Active: poll for a waiting opponent then create game
   State.mmPollInterval = setInterval(async () => {
     if (matched) { stopMatchmaking(); return; }
     const opp = await firebaseService.findOpponent(uid, State.boardSize, 'go');
     if (opp) {
       matched = true;
       stopMatchmaking();
-      const gameId = await firebaseService.createGame(uid, opp.userId, State.boardSize);
-      // Notify opponent: write gameId + my info so they can show my name
-      try {
-        await firebaseService.db.collection('matchmaking').doc(opp.userId).update({
-          gameId, oppName: name, oppElo: State.stats.elo,
-        });
-      } catch(e) {}
+      // Create game — this write appears in opponent's listenForMyGame listener
+      const gameId = await firebaseService.createGame(
+        uid, opp.userId, State.boardSize, name, opp.displayName,
+        State.stats.elo, opp.elo
+      );
       await firebaseService.leaveQueue(uid);
       State.gameId  = gameId;
       State.myColor = BLACK;
@@ -666,19 +674,20 @@ async function startChessOnlineGame() {
   let matched = false;
   stopMatchmaking();
 
-  const myRef = firebaseService.db.collection('matchmaking').doc(uid);
-  State.mmUnsub = myRef.onSnapshot(async doc => {
+  const joinedAt = Date.now();
+
+  // Passive: chess active player = white, so passive = black
+  State.mmUnsub = firebaseService.listenForMyGame(uid, 'black', 'chess-games', async gameData => {
     if (matched) return;
-    const data = doc.data();
-    if (data && data.gameId) {
-      matched = true;
-      stopMatchmaking();
-      await firebaseService.leaveQueue(uid);
-      hideMatchmakingModal();
-      const oppName = data.oppName || 'Đối thủ';
-      toast(`Đã kết nối với ${oppName}!`, 'success');
-      startChessOnlineGameWithId(data.gameId, 'b', oppName, data.oppElo);
-    }
+    const createdMs = gameData.createdAt?.toMillis?.() || 0;
+    if (createdMs > 0 && createdMs < joinedAt - 30000) return;
+    matched = true;
+    stopMatchmaking();
+    await firebaseService.leaveQueue(uid);
+    hideMatchmakingModal();
+    const oppName = gameData.whiteName || 'Đối thủ';
+    toast(`Đã kết nối với ${oppName}!`, 'success');
+    startChessOnlineGameWithId(gameData.id, 'b', oppName, gameData.whiteElo || 1200);
   });
 
   State.mmPollInterval = setInterval(async () => {
@@ -687,12 +696,7 @@ async function startChessOnlineGame() {
     if (opp) {
       matched = true;
       stopMatchmaking();
-      const gameId = await firebaseService.createChessGame(uid, opp.userId);
-      try {
-        await firebaseService.db.collection('matchmaking').doc(opp.userId).update({
-          gameId, oppName: name, oppElo: State.stats.elo,
-        });
-      } catch(e) {}
+      const gameId = await firebaseService.createChessGame(uid, opp.userId, name, opp.displayName, State.stats.elo, opp.elo);
       await firebaseService.leaveQueue(uid);
       hideMatchmakingModal();
       toast(`Tìm được đối thủ: ${opp.displayName}!`, 'success');

@@ -126,11 +126,11 @@ class FirebaseService {
     return others.length ? others[0].data() : null;
   }
 
-  async createGame(blackId, whiteId, boardSize) {
+  async createGame(blackId, whiteId, boardSize, blackName = '', whiteName = '', blackElo = 1200, whiteElo = 1200) {
     if (!this._ready) return null;
     const ref = this.db.collection('games').doc();
     const data = {
-      blackId, whiteId, boardSize,
+      blackId, whiteId, boardSize, blackName, whiteName, blackElo, whiteElo,
       board: Array(boardSize).fill(null).map(() => Array(boardSize).fill(0)),
       current: BLACK,
       captures: { [BLACK]: 0, [WHITE]: 0 },
@@ -142,6 +142,22 @@ class FirebaseService {
     };
     await ref.set(data);
     return ref.id;
+  }
+
+  /* Listen for a new game where I am whiteId/blackId (single-field query, no composite index needed) */
+  listenForMyGame(userId, role, collectionName, callback) {
+    if (!this._ready) return () => {};
+    const field = role === 'white' ? 'whiteId' : 'blackId';
+    return this.db.collection(collectionName)
+      .where(field, '==', userId)
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const data = { id: change.doc.id, ...change.doc.data() };
+            if (data.status === 'playing') callback(data);
+          }
+        });
+      });
   }
 
   listenGame(gameId, callback) {
@@ -169,11 +185,11 @@ class FirebaseService {
   }
 
   /* ── Chess Online ─────────────────────────────── */
-  async createChessGame(whiteId, blackId) {
+  async createChessGame(whiteId, blackId, whiteName = '', blackName = '', whiteElo = 1200, blackElo = 1200) {
     if (!this._ready) return null;
     const ref = this.db.collection('chess-games').doc();
     await ref.set({
-      whiteId, blackId,
+      whiteId, blackId, whiteName, blackName, whiteElo, blackElo,
       board: [
         ['bR','bN','bB','bQ','bK','bB','bN','bR'],
         ['bP','bP','bP','bP','bP','bP','bP','bP'],
